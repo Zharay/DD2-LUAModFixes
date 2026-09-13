@@ -19,3 +19,9 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 - Added new option to show an exclaimation (!) to mark important NPCs
 - Added new config variables to customize its color and size
 - Added new config variable to set how often the mod searches for important NPCs to reduce performance impact
+
+### [Carry It For Me](https://www.nexusmods.com/dragonsdogma2/mods/284)
+- Fixed GetItem calls to use the updated signatures
+- GetItemOption.EventType is now being used instead
+- Fixed a bug pertaining to event items never being filtered correctly
+- Fixed equipment not being passed to pawns
