@@ -6,7 +6,7 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 ## Fixed Mods 
 
 ### [Shut Up Pawns](https://www.nexusmods.com/dragonsdogma2/mods/248)
-- Fixed errors invloving PopStyleColor() and TreePop()
+- Fixed errors involving  PopStyleColor() and TreePop()
 - Fixed possible `nil` access values when it tries to obtain `app_MessageManager`
 - It will now try to reobtain the `app_MessageManager` if it is never loaded
 
