@@ -114,15 +114,12 @@ local function PassItemToPawn(ret)
             local itemData = stroageData._ItemData
             log.info("[Carry It For Me] weight: " .. tostring(itemData._Weight * 0.01))
 
-            -- get_ItemParam() can return nil for some item types, so read the field directly to avoid a crash
-            local subCategory = itemData._SubCategory
-            if subCategory == nil then
-                local ok, param = pcall(function() return itemData:get_ItemParam() end)
-                subCategory = ok and param and param._SubCategory
-            end
+            -- Equipment can have no ItemDataParam, and therefore no subcategory.
+            local ok, param = pcall(function() return itemData:call("get_ItemParam()") end)
+            local subCategory = ok and param and param:get_field("_SubCategory")
 
             local isCategoryEnabled = Config.ItemCategory[tostring(itemData._Category)]
-            local isSubCategoryEnabled = Config.ItemSubCategory[tostring(subCategory)]
+            local isSubCategoryEnabled = subCategory == nil or Config.ItemSubCategory[tostring(subCategory)] == true
             log.info("[Carry It For Me] category=" .. tostring(itemData._Category) .. " (enabled=" .. tostring(isCategoryEnabled) .. "), subCategory=" .. tostring(subCategory) .. " (enabled=" .. tostring(isSubCategoryEnabled) .. ")")
             if isCategoryEnabled and isSubCategoryEnabled then
                 local pawn = GetPawn(stroageData._ItemData._Weight * 0.01)
@@ -130,6 +127,7 @@ local function PassItemToPawn(ret)
                     -- storage, num, char id to, is new
                     log.info("[Carry It For Me] passing item " .. tostring(itemID) .. " x" .. tostring(itemNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
                     ItemManager:passItem(stroageData, itemNum, pawn:get_CharaID(), true)
+                    log.info("[Carry It For Me] passItem completed")
                 else
                     log.info("[Carry It For Me] no eligible pawn found (all pawns overweight or full)")
                 end
