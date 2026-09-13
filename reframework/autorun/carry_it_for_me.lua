@@ -6,9 +6,12 @@ local imgui = imgui
 local log = log
 local json = json
 local draw = draw
+local debug = false
 
-
-log.info("[Carry It For Me] Loaded");
+if debug then
+    log.set_level("info")
+    log.info("[Carry It For Me] Loaded")
+end
 
 local Config = json.load_file('carry_it_for_me.json') or {}
 if Config.Enabled == nil then
@@ -85,7 +88,7 @@ local function GetPawn(extraWeight)
                 if pawnChar then
                     local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
                     local weight = ItemManager:call("getStorageWeight(app.Character)", pawnChar)
-                    -- log.info("weight: " .. tostring(weight) .. ", extra: " .. tostring(extraWeight) .. ", limit: " .. tostring(limit))
+                    log.info("weight: " .. tostring(weight) .. ", extra: " .. tostring(extraWeight) .. ", limit: " .. tostring(limit))
                     local rank = ItemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
                     if rank <= 2 then
                         return pawnChar
@@ -97,9 +100,11 @@ local function GetPawn(extraWeight)
 end
 
 local function PassItemToPawn(ret)
+    log.info("[Carry It For Me] PassItemToPawn called, itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", itemEventType=" .. tostring(itemEventType))
     if Config.Enabled and ItemManager and itemEventType then
         if (itemEventType & Config.ItemEvent) == 0 then
             -- no enabled event bit matches this pickup, e.g. 8 is Talk
+            log.info("[Carry It For Me] skipped: itemEventType " .. tostring(itemEventType) .. " not in Config.ItemEvent " .. tostring(Config.ItemEvent))
             return ret
         end
         local player = GetPlayer()
@@ -107,17 +112,30 @@ local function PassItemToPawn(ret)
         local stroageData = ItemManager:getStorageData(itemID, playerID)
         if stroageData and stroageData._ItemData then
             local itemData = stroageData._ItemData
-            -- log.info("weight: " .. tostring(itemData._Weight * 0.01))
+            log.info("[Carry It For Me] weight: " .. tostring(itemData._Weight * 0.01))
+
+            -- get_ItemParam() can return nil for some item types, so read the field directly to avoid a crash
+            local subCategory = itemData._SubCategory
+            if subCategory == nil then
+                local ok, param = pcall(function() return itemData:get_ItemParam() end)
+                subCategory = ok and param and param._SubCategory
+            end
 
             local isCategoryEnabled = Config.ItemCategory[tostring(itemData._Category)]
-            local isSubCategoryEnabled = Config.ItemSubCategory[tostring(itemData:get_ItemParam()._SubCategory)]
+            local isSubCategoryEnabled = Config.ItemSubCategory[tostring(subCategory)]
+            log.info("[Carry It For Me] category=" .. tostring(itemData._Category) .. " (enabled=" .. tostring(isCategoryEnabled) .. "), subCategory=" .. tostring(subCategory) .. " (enabled=" .. tostring(isSubCategoryEnabled) .. ")")
             if isCategoryEnabled and isSubCategoryEnabled then
                 local pawn = GetPawn(stroageData._ItemData._Weight * 0.01)
                 if pawn then
                     -- storage, num, char id to, is new
+                    log.info("[Carry It For Me] passing item " .. tostring(itemID) .. " x" .. tostring(itemNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
                     ItemManager:passItem(stroageData, itemNum, pawn:get_CharaID(), true)
+                else
+                    log.info("[Carry It For Me] no eligible pawn found (all pawns overweight or full)")
                 end
             end
+        else
+            log.info("[Carry It For Me] no storage data found for itemID=" .. tostring(itemID))
         end
     end
 
@@ -143,6 +161,7 @@ function (args)
             itemNum = sdk.to_int64(args[4])
             local option = sdk.to_valuetype(args[6], "app.ItemDefine.GetItemOption")
             itemEventType = option and option:get_field("EventType")
+            log.info("[Carry It For Me] player getItem: itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", eventType=" .. tostring(itemEventType))
         end
     else
         ItemManager = nil

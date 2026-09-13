@@ -128,7 +128,9 @@ re.on_frame(function()
 	imgui.push_font(font)
 	local player = get_manual_player_method:call(chr_mgr)
 	camera = sdk.get_primary_camera()
-	cam_matrix = camera and camera:get_GameObject():get_Transform():get_WorldMatrix()
+	-- camera can be mid-transition (cutscene/load) and throw on get_GameObject, so guard it
+	local ok, cam_go = pcall(function() return camera and camera:get_GameObject() end)
+	cam_matrix = ok and cam_go and cam_go:get_Transform():get_WorldMatrix()
 	if not cam_matrix then
 		imgui.pop_font()
 		return
@@ -153,8 +155,9 @@ re.on_frame(function()
 		for i = 0, char_count - 1 do
 			local char = all_chars:get_Item(i)
 			if char ~= player and is_quest_npc(char:get_CharaID()) then
-				local char_game_object = char:get_GameObject()
-				local contact_pos = contact_pos_by_gameobject[char_game_object]
+				-- a character can despawn/detach mid-scan and throw on get_GameObject, so guard it
+				local ok, char_game_object = pcall(function() return char:get_GameObject() end)
+				local contact_pos = ok and char_game_object and contact_pos_by_gameobject[char_game_object]
 				if contact_pos and not is_obscured(contact_pos) then
 					local pos = char_game_object:get_Transform():get_Position()
 					local text_pos = Vector3f.new(pos.x, pos.y+config.y, pos.z)
