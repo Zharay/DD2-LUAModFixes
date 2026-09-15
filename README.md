@@ -40,7 +40,10 @@ Technically this mod works as is, but I was getting sick and tired of this shit 
 This mod is technically working but by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
 
 - Optimized the heck out of it.
-- Got rid of seconds
+- Got rid of seconds. It was never needed.
 - We peg TimeManager every 0.5 second (4x per in-game minute) instead of every frame
 - The display string is now cached. We only update once every in-game minute (2 seconds real world)
 - Any changes to settings updates the cache immediately.
+- Changing font size no longer requires a restart
+- Added ability to disable the clock during cutscenes (tho what the game counts as cutscenes is spotty)
+  - This check is done every 0.5 sec as it is costly otherwise
