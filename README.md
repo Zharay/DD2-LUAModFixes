@@ -25,3 +25,22 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 - GetItemOption.EventType is now being used instead
 - Fixed a bug pertaining to event items never being filtered correctly
 - Fixed equipment not being passed to pawns
+
+## Working but Optimized Mods
+These are mods that are working but have issues that irked me to hell.
+
+### [Better Better Item Desccription](https://www.nexusmods.com/dragonsdogma2/mods/338)
+Technically this mod works as is, but I was getting sick and tired of this shit spamming my logs and how it'd just break when debugging other things.
+
+- Now initializes correctly and not only when a player loads a save game
+- Logging is back to just being info logs instead of error logs (_NickCore for some reason defaults to error type logs)
+- Fixed naming/cache name misspelling
+
+### [Clock](https://www.nexusmods.com/dragonsdogma2/mods/150)
+This mod is technically working by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
+
+- Optimized the heck out of it.
+- Got rid of seconds
+- We peg TimeManager every 0.5 second (4x per in-game minute) instead of every frame
+- The display string is now cached. We only update once every in-game minute (2 seconds real world)
+- Any changes to settings updates the cache immediately.
