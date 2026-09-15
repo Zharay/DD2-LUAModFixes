@@ -18,6 +18,7 @@ local _config={
     
     {name="Enable",type="mutualbox"},
     {name="DisableInMenu",type="bool",default=false},
+    {name="DisableInCutscene",type="bool",default=true},
     {name="EnableClock",type="bool",default=true},
     {name="ToggleHotkey",type="hotkey",default="Alpha3",actionName="ClockEnable8293"},
 }
@@ -69,6 +70,7 @@ end
 
 local hk = prequire("Hotkeys/Hotkeys")
 local guiManager=sdk.get_managed_singleton("app.GuiManager")
+local demoMediator=sdk.get_managed_singleton("app.DemoMediator")
 local function Log(msg)
     log.info(modname..msg)
 end
@@ -78,57 +80,70 @@ re.on_frame(function()
         config.EnableClock=not config.EnableClock
     end
     if not config.EnableClock then return end
-    if config.DisableInMenu and guiManager:get_IsLoadGui() then return end
+    if config.DisableInMenu and guiManager~=nil and guiManager:get_IsLoadGui() then return end
 
     -- 1 in-game minute = 2 real seconds, so polling 4x per in-game minute is plenty
     local now=os.clock()
     if now>=next_poll or cached_key==nil then
         next_poll=now+0.5
-        local tm=sdk.get_managed_singleton("app.TimeManager")
-        if tm==nil then
+        local in_cutscene=false
+        if config.DisableInCutscene then
+            if demoMediator==nil then
+                demoMediator=sdk.get_managed_singleton("app.DemoMediator")
+            end
+            in_cutscene=(demoMediator~=nil and demoMediator:get_IsPlayingDemo())
+        end
+
+        if in_cutscene then
             cached_msg=nil
+            cached_key=nil
         else
-            local d=tm:get_InGameDay()
-            local h=tm:get_InGameHour()
-            local m=tm:get_InGameMinute()
-            local key=((d*24)+h)*60+m
-            if key~=cached_key then
-                cached_key=key
-                local state=""
-                if config.ShowTimeSlot then
-                    if tm:isNight() then
-                        state="Night"
-                    elseif tm:isDawn() then
-                        state="Dawn"
-                    elseif tm:isNoon() then
-                        state="Noon"
-                    elseif tm:isDusk() then
-                        state="Dusk"
+            local tm=sdk.get_managed_singleton("app.TimeManager")
+            if tm==nil then
+                cached_msg=nil
+            else
+                local d=tm:get_InGameDay()
+                local h=tm:get_InGameHour()
+                local m=tm:get_InGameMinute()
+                local key=((d*24)+h)*60+m
+                if key~=cached_key then
+                    cached_key=key
+                    local state=""
+                    if config.ShowTimeSlot then
+                        if tm:isNight() then
+                            state="Night"
+                        elseif tm:isDawn() then
+                            state="Dawn"
+                        elseif tm:isNoon() then
+                            state="Noon"
+                        elseif tm:isDusk() then
+                            state="Dusk"
+                        end
                     end
-                end
-                local ampm=""
-                if config.UseAMPM==true then
-                    if h<12 then ampm="AM"
-                    else ampm="PM" end
-                    -- 0:30 PM should be 12:30 PM?
-                    if h>12 then h=h%12 end
-                end
+                    local ampm=""
+                    if config.UseAMPM==true then
+                        if h<12 then ampm="AM"
+                        else ampm="PM" end
+                        -- 0:30 PM should be 12:30 PM?
+                        if h>12 then h=h%12 end
+                    end
 
-                local dformat=config.ZeroFill and "%02d" or "%2d"
-                local msg=config.CustomFormat
-                msg=msg:gsub(":?{s}","")
-                msg=msg:gsub("{h}", string.format(dformat,h))
-                msg=msg:gsub("{m}", string.format(dformat,m))
-                msg=msg:gsub("{D}", tostring(d))
-                msg=msg:gsub("{T}", state)
-                msg=msg:gsub("{a}", ampm)
-                cached_msg=msg
+                    local dformat=config.ZeroFill and "%02d" or "%2d"
+                    local msg=config.CustomFormat
+                    msg=msg:gsub(":?{s}","")
+                    msg=msg:gsub("{h}", string.format(dformat,h))
+                    msg=msg:gsub("{m}", string.format(dformat,m))
+                    msg=msg:gsub("{D}", tostring(d))
+                    msg=msg:gsub("{T}", state)
+                    msg=msg:gsub("{a}", ampm)
+                    cached_msg=msg
 
-                if config.ShowBg==true then
-                    imgui.push_font(font)
-                    local size=imgui.calc_text_size(msg)
-                    imgui.pop_font()
-                    cached_w,cached_h=size.x,size.y
+                    if config.ShowBg==true then
+                        imgui.push_font(font)
+                        local size=imgui.calc_text_size(msg)
+                        imgui.pop_font()
+                        cached_w,cached_h=size.x,size.y
+                    end
                 end
             end
         end
