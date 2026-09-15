@@ -4,22 +4,22 @@ log.info("["..modname.."]".."Start")
 --settings
 local _config={
     {name="Style",type="mutualbox"},
-    {name="fontsize",type="int",default=60,min=1,max=250,needrestart=true},
-    {name="offset",type="intN",default={50,50},min=-300,max=8000},
-    {name="color",type="rgba32",default=0xffEEEEEE},
-    {name="backgroundcolor",type="rgba32",default=0x88777777},
+    {name="FontSize",type="int",default=60,min=1,max=250},
+    {name="Offset",type="intN",default={50,50},min=-300,max=8000},
+    {name="Color",type="rgba32",default=0xffEEEEEE},
+    {name="BgColor",type="rgba32",default=0x88777777},
 
     {name="Format",type="mutualbox"},
-    {name="zerofill",type="bool",default=true},
-    {name="showbackground",type="bool",default=true},
-    {name="showtimeslot",type="bool",default=true},
-    {name="useAMPM",type="bool",default=false},
-    {name="customFormat",type="string",default="{D}-Day {T} {h}:{m} {a}"},
+    {name="ZeroFill",type="bool",default=true},
+    {name="ShowBg",type="bool",default=true},
+    {name="ShowTimeSlot",type="bool",default=true},
+    {name="UseAMPM",type="bool",default=false},
+    {name="CustomFormat",type="string",default="{D}-Day {T} {h}:{m} {a}"},
     
     {name="Enable",type="mutualbox"},
-    {name="disableInMenu",type="bool",default=false},
-    {name="enable",type="bool",default=true},
-    {name="enableHotkey",type="hotkey",default="Alpha3",actionName="ClockEnable8293"},
+    {name="DisableInMenu",type="bool",default=false},
+    {name="EnableClock",type="bool",default=true},
+    {name="ToggleHotkey",type="hotkey",default="Alpha3",actionName="ClockEnable8293"},
 }
 --merge config file to default config
 local function recurse_def_settings(tbl, new_tbl)
@@ -39,13 +39,25 @@ for key,para in pairs(_config) do
     config[para.name]=para.default
 end
 config= recurse_def_settings(config, json.load_file(configfile) or {})
+
+local current_FontSize=config.FontSize
+local font=imgui.load_font("times.ttf", config.FontSize)
+
 --cached render state, rebuilt only when the in-game minute (or a setting) changes
 local cached_msg=nil
 local cached_w,cached_h=0,0
 local cached_key=nil
 local next_poll=0
+
 --On setting Change
 local function OnChanged()
+    if config.FontSize ~= current_FontSize then
+        current_FontSize = config.FontSize
+        local new_font = imgui.load_font("times.ttf", config.FontSize)
+        if new_font ~= nil then
+            font = new_font
+        end
+    end
     cached_key=nil
 end
 --try load api and draw ui
@@ -56,7 +68,6 @@ local function prequire(...)
 end
 
 local hk = prequire("Hotkeys/Hotkeys")
-local font = imgui.load_font("times.ttf", config.fontsize)
 local guiManager=sdk.get_managed_singleton("app.GuiManager")
 local function Log(msg)
     log.info(modname..msg)
@@ -64,10 +75,10 @@ end
 
 re.on_frame(function()
     if hk~=nil and hk.check_hotkey("ClockEnable8293",false,true) then
-        config.enable=not config.enable
+        config.EnableClock=not config.EnableClock
     end
-    if not config.enable then return end
-    if config.disableInMenu and guiManager:get_IsLoadGui() then return end
+    if not config.EnableClock then return end
+    if config.DisableInMenu and guiManager:get_IsLoadGui() then return end
 
     -- 1 in-game minute = 2 real seconds, so polling 4x per in-game minute is plenty
     local now=os.clock()
@@ -84,7 +95,7 @@ re.on_frame(function()
             if key~=cached_key then
                 cached_key=key
                 local state=""
-                if config.showtimeslot then
+                if config.ShowTimeSlot then
                     if tm:isNight() then
                         state="Night"
                     elseif tm:isDawn() then
@@ -96,15 +107,15 @@ re.on_frame(function()
                     end
                 end
                 local ampm=""
-                if config.useAMPM==true then
+                if config.UseAMPM==true then
                     if h<12 then ampm="AM"
                     else ampm="PM" end
                     -- 0:30 PM should be 12:30 PM?
                     if h>12 then h=h%12 end
                 end
 
-                local dformat=config.zerofill and "%02d" or "%2d"
-                local msg=config.customFormat
+                local dformat=config.ZeroFill and "%02d" or "%2d"
+                local msg=config.CustomFormat
                 msg=msg:gsub(":?{s}","")
                 msg=msg:gsub("{h}", string.format(dformat,h))
                 msg=msg:gsub("{m}", string.format(dformat,m))
@@ -113,7 +124,7 @@ re.on_frame(function()
                 msg=msg:gsub("{a}", ampm)
                 cached_msg=msg
 
-                if config.showbackground==true then
+                if config.ShowBg==true then
                     imgui.push_font(font)
                     local size=imgui.calc_text_size(msg)
                     imgui.pop_font()
@@ -126,10 +137,10 @@ re.on_frame(function()
     if cached_msg==nil then return end
 
     imgui.push_font(font)
-    if config.showbackground==true then
-        draw.filled_rect(config.offset[1]-5, config.offset[2]-5, cached_w+10, cached_h+10, config.backgroundcolor)
+    if config.ShowBg==true then
+        draw.filled_rect(config.Offset[1]-5, config.Offset[2]-5, cached_w+10, cached_h+10, config.BgColor)
     end
-    draw.text(cached_msg,config.offset[1],config.offset[2],config.color)
+    draw.text(cached_msg,config.Offset[1],config.Offset[2],config.Color)
     imgui.pop_font()
 end)
 

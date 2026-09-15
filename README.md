@@ -37,7 +37,7 @@ Technically this mod works as is, but I was getting sick and tired of this shit 
 - Fixed naming/cache name misspelling
 
 ### [Clock](https://www.nexusmods.com/dragonsdogma2/mods/150)
-This mod is technically working by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
+This mod is technically working but by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
 
 - Optimized the heck out of it.
 - Got rid of seconds
