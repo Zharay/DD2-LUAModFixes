@@ -76,43 +76,87 @@ local ItemManager = nil
 local itemID = nil
 local itemNum = nil
 local itemEventType = nil
+local itemSource = nil
 
-local function GetPawn(extraWeight)
-    local pawnMgr = GetPawnManager();
-    if pawnMgr and ItemManager then
-        local list = pawnMgr:call("get_PawnCharacterList()")
-        if list then
-            local len = list:call("get_Count")
-            for i = 0, len - 1, 1 do
-                local pawnChar = list:call("get_Item", i)
-                if pawnChar then
-                    local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
-                    local weight = ItemManager:call("getStorageWeight(app.Character)", pawnChar)
-                    log.info("weight: " .. tostring(weight) .. ", extra: " .. tostring(extraWeight) .. ", limit: " .. tostring(limit))
-                    local rank = ItemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
-                    if rank <= 2 then
-                        return pawnChar
-                    end
-                end
-            end
-        end
+local function Log(msg)
+    if debug then
+        log.info("[Carry It For Me] " .. msg)
     end
 end
 
-local function PassItemToPawn(ret)
-    log.info("[Carry It For Me] PassItemToPawn called, itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", itemEventType=" .. tostring(itemEventType))
-    if Config.Enabled and ItemManager and itemEventType then
-        if (itemEventType & Config.ItemEvent) == 0 then
-            -- no enabled event bit matches this pickup, e.g. 8 is Talk
-            log.info("[Carry It For Me] skipped: itemEventType " .. tostring(itemEventType) .. " not in Config.ItemEvent " .. tostring(Config.ItemEvent))
-            return ret
+local function ClearPendingItem()
+    ItemManager = nil
+    itemID = nil
+    itemNum = nil
+    itemEventType = nil
+    itemSource = nil
+end
+
+local function GetPawn(extraWeight)
+    local pawnMgr = GetPawnManager();
+    if not pawnMgr then
+        Log("GetPawn: PawnManager singleton unavailable")
+        return
+    end
+    if not ItemManager then
+        Log("GetPawn: ItemManager unavailable")
+        return
+    end
+    local list = pawnMgr:call("get_PawnCharacterList()")
+    if not list then
+        Log("GetPawn: PawnCharacterList was nil")
+        return
+    end
+    local len = list:call("get_Count")
+    Log("GetPawn: evaluating " .. tostring(len) .. " pawn(s) for extra weight " .. tostring(extraWeight))
+    for i = 0, len - 1, 1 do
+        local pawnChar = list:call("get_Item", i)
+        if pawnChar then
+            local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
+            local weight = ItemManager:call("getStorageWeight(app.Character)", pawnChar)
+            local rank = ItemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
+            Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
+                .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
+                .. ", limit=" .. tostring(limit) .. ", rank=" .. tostring(rank))
+            if rank <= 2 then
+                return pawnChar
+            end
+        else
+            Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
         end
+    end
+    return nil
+end
+
+local function TryPassPendingItem()
+    Log("TryPassPendingItem called, source=" .. tostring(itemSource) .. ", itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", itemEventType=" .. tostring(itemEventType))
+    if not Config.Enabled then
+        Log("skipped: mod is disabled in config")
+        return
+    end
+    if not ItemManager or not itemID then
+        Log("skipped: no player pickup captured by the pre-hook")
+        return
+    end
+    if itemEventType == nil then
+        -- overloads without a GetItemOption carry no event info, so only the category filters apply
+        Log("no event type on this overload; event filter bypassed")
+    elseif (itemEventType & Config.ItemEvent) == 0 then
+        -- no enabled event bit matches this pickup, e.g. 8 is Talk
+        Log("skipped: itemEventType " .. tostring(itemEventType) .. " not in Config.ItemEvent " .. tostring(Config.ItemEvent))
+        return
+    end
+    do
         local player = GetPlayer()
+        if not player then
+            Log("skipped: player character unavailable")
+            return
+        end
         local playerID = player:get_CharaID()
         local stroageData = ItemManager:getStorageData(itemID, playerID)
         if stroageData and stroageData._ItemData then
             local itemData = stroageData._ItemData
-            log.info("[Carry It For Me] weight: " .. tostring(itemData._Weight * 0.01))
+            Log("weight: " .. tostring(itemData._Weight * 0.01))
 
             -- Equipment can have no ItemDataParam, and therefore no subcategory.
             local ok, param = pcall(function() return itemData:call("get_ItemParam()") end)
@@ -120,23 +164,38 @@ local function PassItemToPawn(ret)
 
             local isCategoryEnabled = Config.ItemCategory[tostring(itemData._Category)]
             local isSubCategoryEnabled = subCategory == nil or Config.ItemSubCategory[tostring(subCategory)] == true
-            log.info("[Carry It For Me] category=" .. tostring(itemData._Category) .. " (enabled=" .. tostring(isCategoryEnabled) .. "), subCategory=" .. tostring(subCategory) .. " (enabled=" .. tostring(isSubCategoryEnabled) .. ")")
+            Log("category=" .. tostring(itemData._Category) .. " (enabled=" .. tostring(isCategoryEnabled) .. "), subCategory=" .. tostring(subCategory) .. " (enabled=" .. tostring(isSubCategoryEnabled) .. ")")
             if isCategoryEnabled and isSubCategoryEnabled then
                 local pawn = GetPawn(stroageData._ItemData._Weight * 0.01)
                 if pawn then
                     -- storage, num, char id to, is new
-                    log.info("[Carry It For Me] passing item " .. tostring(itemID) .. " x" .. tostring(itemNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
-                    ItemManager:passItem(stroageData, itemNum, pawn:get_CharaID(), true)
-                    log.info("[Carry It For Me] passItem completed")
+                    Log("passing item " .. tostring(itemID) .. " x" .. tostring(itemNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
+                    local ok, err = pcall(function()
+                        ItemManager:passItem(stroageData, itemNum, pawn:get_CharaID(), true)
+                    end)
+                    if ok then
+                        Log("passItem completed")
+                    else
+                        Log("passItem FAILED: " .. tostring(err))
+                    end
                 else
-                    log.info("[Carry It For Me] no eligible pawn found (all pawns overweight or full)")
+                    Log("no eligible pawn found (all pawns overweight or full)")
                 end
+            else
+                Log("skipped: category/subcategory filtered out by config")
             end
         else
-            log.info("[Carry It For Me] no storage data found for itemID=" .. tostring(itemID))
+            Log("no storage data found for itemID=" .. tostring(itemID))
         end
     end
+end
 
+local function PassItemToPawn(ret)
+    local ok, err = pcall(TryPassPendingItem)
+    if not ok then
+        Log("ERROR while passing item: " .. tostring(err))
+    end
+    ClearPendingItem()
     return ret
 end
 
@@ -147,27 +206,110 @@ end
 --     return ret
 -- end)
 
--- as of the current game version, getItem's flags/event type are bundled into an app.ItemDefine.GetItemOption struct arg
-sdk.hook(sdk.find_type_definition("app.ItemManager"):get_method("getItem(System.Int32, System.Int32, app.Character, app.ItemDefine.GetItemOption)"),
-function (args)
-    local player = GetPlayer()
-    local chara = sdk.to_managed_object(args[5])
-    if chara and player then
-        if chara:get_CharaID() == player:get_CharaID() then
-            ItemManager = sdk.to_managed_object(args[2])
-            itemID = sdk.to_int64(args[3])
-            itemNum = sdk.to_int64(args[4])
-            local option = sdk.to_valuetype(args[6], "app.ItemDefine.GetItemOption")
-            itemEventType = option and option:get_field("EventType")
-            log.info("[Carry It For Me] player getItem: itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", eventType=" .. tostring(itemEventType))
-        end
-    else
-        ItemManager = nil
-        itemID = nil
-        itemNum = nil
-        itemEventType = nil
+local ItemManagerType = sdk.find_type_definition("app.ItemManager")
+if not ItemManagerType then
+    Log("FATAL: app.ItemManager type not found")
+end
+
+local function ReadEventType(optionPtr)
+    if optionPtr == nil then return nil end
+    local ok, option = pcall(sdk.to_valuetype, optionPtr, "app.ItemDefine.GetItemOption")
+    if ok and option then
+        return option:get_field("EventType")
     end
-end, PassItemToPawn)
+    return nil
+end
+
+local function ReadItemResult(resultPtr)
+    local ok, result = pcall(sdk.to_managed_object, resultPtr)
+    if ok and result then
+        local okFields, id, num = pcall(function()
+            return result:get_field("Id"), result:get_field("Num")
+        end)
+        if okFields and id then return id, num end
+    end
+    local okVt, vt = pcall(sdk.to_valuetype, resultPtr, "app.ItemDropLottery.ItemResult")
+    if okVt and vt then
+        return vt:get_field("Id"), vt:get_field("Num")
+    end
+    return nil, nil
+end
+
+-- captures the pickup only when it belongs to the player, so the post-hook can hand it off
+local function CapturePickup(label, itemMgrPtr, id, num, charaPtr, optionPtr)
+    local player = GetPlayer()
+    local okChara, chara = pcall(sdk.to_managed_object, charaPtr)
+    local charaID = okChara and chara and chara:get_CharaID()
+    local playerID = player and player:get_CharaID()
+    Log(label .. " fired: charaID=" .. tostring(charaID) .. ", playerID=" .. tostring(playerID)
+        .. ", itemID=" .. tostring(id) .. ", itemNum=" .. tostring(num))
+    if charaID and playerID and charaID == playerID then
+        ItemManager = sdk.to_managed_object(itemMgrPtr)
+        itemID = id
+        itemNum = num
+        itemEventType = ReadEventType(optionPtr)
+        itemSource = label
+        Log("player pickup captured via " .. label .. ": itemID=" .. tostring(itemID)
+            .. ", itemNum=" .. tostring(itemNum) .. ", eventType=" .. tostring(itemEventType))
+    else
+        -- clear so the post-hook never re-passes a previously captured item
+        Log("ignored: pickup was not the player's (" .. label .. ")")
+        ClearPendingItem()
+    end
+end
+
+local function RegisterHook(signature, preHook)
+    local method = ItemManagerType and ItemManagerType:get_method(signature)
+    if not method then
+        Log("FATAL: method not found, these pickups can never be detected: " .. signature)
+        return
+    end
+    sdk.hook(method, function (args)
+        local ok, err = pcall(preHook, args)
+        if not ok then
+            Log("ERROR in pre-hook for " .. signature .. ": " .. tostring(err))
+            ClearPendingItem()
+        end
+    end, PassItemToPawn)
+    Log("hook registered: " .. signature)
+end
+
+-- Chests use the option overload; gathering and enemy drops route through the others.
+RegisterHook("getItem(System.Int32, System.Int32, app.Character, app.ItemDefine.GetItemOption)", function (args)
+    CapturePickup("getItem(id, num, Character, option)", args[2], sdk.to_int64(args[3]), sdk.to_int64(args[4]), args[5], args[6])
+end)
+
+RegisterHook("getItem(System.Int32, System.Int32, app.Character)", function (args)
+    CapturePickup("getItem(id, num, Character)", args[2], sdk.to_int64(args[3]), sdk.to_int64(args[4]), args[5], nil)
+end)
+
+RegisterHook("getItem(app.ItemDropLottery.ItemResult, app.Character, app.ItemDefine.GetItemOption)", function (args)
+    local id, num = ReadItemResult(args[3])
+    CapturePickup("getItem(ItemResult, Character, option)", args[2], id, num, args[4], args[5])
+end)
+
+RegisterHook("getItem(app.ItemDropLottery.ItemResult, app.Character)", function (args)
+    local id, num = ReadItemResult(args[3])
+    CapturePickup("getItem(ItemResult, Character)", args[2], id, num, args[4], nil)
+end)
+
+-- The CharacterID overloads have no Character to identify the player with, so only log them for now.
+for _, signature in ipairs({
+    "getItem(System.Int32, System.Int32, app.CharacterID)",
+    "getItem(System.Int32, System.Int32, app.CharacterID, app.ItemDefine.GetItemOption)",
+}) do
+    local method = ItemManagerType and ItemManagerType:get_method(signature)
+    if not method then
+        Log("probe NOT registered, method missing: " .. signature)
+    else
+        sdk.hook(method, function (args)
+            pcall(function()
+                Log("probe fired: " .. signature)
+            end)
+        end, function (ret) return ret end)
+        Log("probe registered: " .. signature)
+    end
+end
 
 local function toBits(num)
     -- returns a table of bits, least significant first.
