@@ -3,6 +3,7 @@
 
 local DefaultConfig = {
     KeepMinimapMarkers = true, -- if set to false, will also stop the ! markers from appearing on minimap
+    AutoSaveChanges = false, -- if true, blocklist changes will automatically be saved to config without needing to press "Save Config"
     DefaultParams = {
         Action = "Block", -- "Block", "Cooldown", "Probability"
         Cooldown = 5, -- In minutes
@@ -80,7 +81,22 @@ local app_BattleManager = sdk.get_managed_singleton("app.BattleManager")
 local app_PawnManager = sdk.get_managed_singleton("app.PawnManager")
 local app_MessageManager = sdk.get_managed_singleton("app.MessageManager")
 
+local LOG_PREFIX = "[ShutUpPawns] "
+local function logDebug(message)
+    log.debug(LOG_PREFIX .. message)
+end
+local function logError(message)
+    log.error(LOG_PREFIX .. message)
+end
+
 local MessageLog = {} -- log of the last few messages, separate to Session.Messages so it'll be kept in the right order
+
+-- these IDs are known to always resolve to blank message text, so we don't want to log an error for them
+local BlankMessageIds = {
+    ["00000002-0000-0000-0100-010100000000"] = true,
+    ["00000002-0000-0000-0100-000100000000"] = true,
+    ["00000002-0000-0000-0100-000001000000"] = true,
+}
 
 local function addToLog(id, messageText)
     table.insert(MessageLog, 1, {id = id, text = messageText, time = os.clock()})
@@ -98,7 +114,11 @@ local function getMessageFromGuid(guid)
     end
     local msg = app_MessageManager:getMessage(guid)
     if not msg or msg == "" then
-        msg = "(failed to find message text for ID " .. (guid.ToString and guid:ToString() or tostring(guid)) .. ")"
+        local guid_str = guid.ToString and guid:ToString() or tostring(guid)
+        if not BlankMessageIds[guid_str] then
+            logError("failed to find message text for ID " .. guid_str)
+        end
+        msg = "(failed to find message text for ID " .. guid_str .. ")"
     end
     return msg
 end
@@ -194,22 +214,32 @@ local function blockListContains(messageId)
     return false
 end
 
+local function blockListRemove(messageId)
+    for i, entry in ipairs(Config.BlockList) do
+        if entry.id == messageId then
+            table.remove(Config.BlockList, i)
+            return true
+        end
+    end
+    return false
+end
+
 local block_action_handlers = {
     Block = function(message_id, block_params) return true end,
     
     Cooldown = function(message_id, block_params)
-        log.debug("Cooldown called for " .. message_id)
+        logDebug("Cooldown called for " .. message_id)
         
         local prev_time = Session.Messages[message_id] and Session.Messages[message_id].last_spoken or 0
         local cooldown_duration = (block_params.Cooldown or 0) * 60
         local time_delta = os.clock() - prev_time
         
-        log.debug("  prev_time = " .. prev_time)
-        log.debug("  cooldown_duration = " .. cooldown_duration)
-        log.debug("  time_delta = " .. time_delta)
+        logDebug("  prev_time = " .. prev_time)
+        logDebug("  cooldown_duration = " .. cooldown_duration)
+        logDebug("  time_delta = " .. time_delta)
         
         local is_blocked = prev_time > 0 and cooldown_duration > time_delta
-        log.debug("  is_blocked = " .. tostring(is_blocked))
+        logDebug("  is_blocked = " .. tostring(is_blocked))
         
         if is_blocked then
             Session.CooldownBlocked = Session.CooldownBlocked + 1
@@ -219,12 +249,12 @@ local block_action_handlers = {
     end,
     
     Probability = function(message_id, block_params)
-        log.debug("Probability called for " .. message_id)
+        logDebug("Probability called for " .. message_id)
         
         local random_num = math.random()
         local probability = block_params.Probability or 0
-        log.debug("  random_num = " .. random_num)
-        log.debug("  probability/100 = " .. probability/100)
+        logDebug("  random_num = " .. random_num)
+        logDebug("  probability/100 = " .. probability/100)
 
         if not Session.Messages[message_id] then
             Session.Messages[message_id] = {}
@@ -233,7 +263,7 @@ local block_action_handlers = {
         local details = Session.Messages[message_id]
         details.last_roll = math.floor(random_num * 100)
         details.last_roll_success = (random_num > probability / 100)
-        log.debug("  last_roll_success = " .. tostring(details.last_roll_success))
+        logDebug("  last_roll_success = " .. tostring(details.last_roll_success))
         
         Session.ProbabilityTotal = Session.ProbabilityTotal + 1
         if not details.last_roll_success then
@@ -276,15 +306,15 @@ local function blockListCheckActionBlocked(message_id)
     if block_params.Geofence and block_params.Geofence ~= "All" then
         local in_town = playerIsInTown()
         if block_params.Geofence == "Towns" and not in_town then
-            log.debug("block skipped, not inside Towns geofence for " .. message_id)
+            logDebug("block skipped, not inside Towns geofence for " .. message_id)
             return false
         elseif block_params.Geofence == "Wilderness" and in_town then
-            log.debug("block skipped, not inside Wilderness geofence for " .. message_id)
+            logDebug("block skipped, not inside Wilderness geofence for " .. message_id)
             return false
         end
     end
     
-    log.debug("checking " .. block_params.Action .. " handler for " .. message_id)
+    logDebug("checking " .. block_params.Action .. " handler for " .. message_id)
     local handler = block_action_handlers[block_params.Action]
     return handler and handler(message_id, block_params) or false
 end
@@ -624,12 +654,12 @@ sdk.hook(
         
         local allowed = isMainPawn(targetChara) or isMainPawn(humanChara)
         if not allowed then
-            log.debug("highFiveController = " .. tostring(controller:get_address()))
+            logDebug("highFiveController = " .. tostring(controller:get_address()))
             
             -- try checking if PawnManager._MainPawn.HighFiveController == this instance
             if app_PawnManager ~= nil and app_PawnManager._MainPawn ~= nil then
                 local mainHighFiveController = app_PawnManager._MainPawn["<HighFiveController>k__BackingField"]
-                log.debug("mainHighFiveController = " .. tostring(mainHighFiveController:get_address()))
+                logDebug("mainHighFiveController = " .. tostring(mainHighFiveController:get_address()))
                 if controller:get_address() == mainHighFiveController:get_address() then
                     allowed = true
                 end
@@ -637,9 +667,9 @@ sdk.hook(
         end
         
         if allowed then
-            log.debug("PawnHighFiveActionController: allowed high-five for main pawn")
+            logDebug("PawnHighFiveActionController: allowed high-five for main pawn")
         else
-            log.debug("PawnHighFiveActionController: disallowed high-five for non-main-pawn")
+            logDebug("PawnHighFiveActionController: disallowed high-five for non-main-pawn")
         end
         
         -- if this is main pawn then we're good, commence high fiving
@@ -672,17 +702,17 @@ sdk.hook(
         local owner = sdk.to_managed_object(args[3])
         local target = sdk.to_managed_object(args[4])
         
-        log.debug("PawnHighFiveController: isMainPawn(owner) = " .. tostring(isMainPawn(owner)))
-        log.debug("PawnHighFiveController: isMainPawn(target) = " .. tostring(isMainPawn(target)))
+        logDebug("PawnHighFiveController: isMainPawn(owner) = " .. tostring(isMainPawn(owner)))
+        logDebug("PawnHighFiveController: isMainPawn(target) = " .. tostring(isMainPawn(target)))
         
         local allowed = isMainPawn(owner) or isMainPawn(target)
         
         if allowed then
-            log.debug("PawnHighFiveController: allowed high-five for main pawn")
+            logDebug("PawnHighFiveController: allowed high-five for main pawn")
             return sdk.PreHookResult.CALL_ORIGINAL
         end
         
-        log.debug("PawnHighFiveController: disallowed high-five for non-main-pawn")
+        logDebug("PawnHighFiveController: disallowed high-five for non-main-pawn")
         return sdk.PreHookResult.SKIP_ORIGINAL
     end,
     function(retval)
@@ -721,24 +751,24 @@ sdk.hook(
             
             if Config.HighFives.AllowBosses then
                 if reason == 3 then -- SpecialBattleFinish
-                    log.debug("Not blocked, reason == 3")
+                    logDebug("Not blocked, reason == 3")
                     return false
                 end
                 
                 if EnemyDangerousRank_cur >= 4 or EnemyDangerousRank_last >= 4 then -- app.BattleManager.EnemyDangerousRank.Hard
-                    log.debug("Not blocked, EnemyDangerousRank >= 4")
+                    logDebug("Not blocked, EnemyDangerousRank >= 4")
                     return false
                 end
                 
                 if IsRegisterBossBGMandBossGauge_cur or IsRegisterBossBGMandBossGauge_last or
                     IsBossEnemyType_cur or IsBossEnemyType_last
                 then
-                    log.debug("Not blocked, IsRegisterBossBGMandBossGauge or IsBossEnemyType")
+                    logDebug("Not blocked, IsRegisterBossBGMandBossGauge or IsBossEnemyType")
                     return false
                 end
             end
             
-            log.debug("High-five blocked!")
+            logDebug("High-five blocked!")
             
             return true
         end
@@ -773,7 +803,7 @@ sdk.hook(
         local candidateIndex = sdk.to_int64(args[5]) & 0xFF
         local candidate = segment._Candidates[candidateIndex]
         
-        log.debug("TalkEntity::play, index = " .. candidateIndex)
+        logDebug("TalkEntity::play, index = " .. candidateIndex)
         
         local bannedId = nil
         local loggedId = nil
@@ -792,7 +822,7 @@ sdk.hook(
             local cur_candidate = segment._Candidates[i]
             if cur_candidate ~= nil and cur_candidate._MsgId ~= nil then
                 local msgid = cur_candidate._MsgId:ToString()
-                log.debug("_Candidates[" .. i .. "].Guid = " .. msgid)
+                logDebug("_Candidates[" .. i .. "].Guid = " .. msgid)
                 
                 if not loggedId then
                     loggedId = msgid
@@ -858,7 +888,7 @@ sdk.hook(
                 Session.Messages[loggedId].last_spoken = cur_time
             end
         else
-            log.debug("  Message " .. bannedId .. " is blocked")
+            logDebug("  Message " .. bannedId .. " is blocked")
             Session.BlockedMessages = Session.BlockedMessages + 1
             
             if not Config.KeepMinimapMarkers then
@@ -916,6 +946,11 @@ re.on_draw_ui(function()
         imgui.separator()
         
         changed, Config.KeepMinimapMarkers = imgui.checkbox("Keep minimap markers from blocked messages", Config.KeepMinimapMarkers)
+        if changed then
+            Session.UnsavedChanges = true
+        end
+        
+        changed, Config.AutoSaveChanges = imgui.checkbox("Automatically save changes", Config.AutoSaveChanges)
         if changed then
             Session.UnsavedChanges = true
         end
@@ -996,9 +1031,19 @@ re.on_draw_ui(function()
                 for i, message in ipairs(MessageLog) do
                     
                     if message.id ~= nil then
-                        if imgui.button("Block##" .. tostring(i)) then
-                            if blockListAdd(message.id) then
-                                Session.UnsavedChanges = true
+                        if blockListContains(message.id) then
+                            imgui.push_style_color(21, COLOR_DELETE_BUTTON)
+                            if imgui.button("Unblock##" .. tostring(i)) then
+                                if blockListRemove(message.id) then
+                                    Session.UnsavedChanges = true
+                                end
+                            end
+                            imgui.pop_style_color(1)
+                        else
+                            if imgui.button("Block##" .. tostring(i)) then
+                                if blockListAdd(message.id) then
+                                    Session.UnsavedChanges = true
+                                end
                             end
                         end
                     end
@@ -1021,5 +1066,10 @@ re.on_draw_ui(function()
         imgui.text("    Last battle duration: " .. BattleDuration)
         
         imgui.tree_pop()
+    end
+    
+    if Config.AutoSaveChanges and Session.UnsavedChanges then
+        config_save()
+        Session.UnsavedChanges = false
     end
 end)
