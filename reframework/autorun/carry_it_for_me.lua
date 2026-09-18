@@ -77,6 +77,7 @@ local itemID = nil
 local itemNum = nil
 local itemEventType = nil
 local itemSource = nil
+local NextPawnIndex = 0
 
 local function Log(msg)
     if debug then
@@ -109,7 +110,12 @@ local function GetPawn(extraWeight)
     end
     local len = list:call("get_Count")
     Log("GetPawn: evaluating " .. tostring(len) .. " pawn(s) for extra weight " .. tostring(extraWeight))
-    for i = 0, len - 1, 1 do
+    if len <= 0 then
+        return nil
+    end
+    local startIndex = NextPawnIndex % len
+    for offset = 0, len - 1, 1 do
+        local i = (startIndex + offset) % len
         local pawnChar = list:call("get_Item", i)
         if pawnChar then
             local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
@@ -119,6 +125,7 @@ local function GetPawn(extraWeight)
                 .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
                 .. ", limit=" .. tostring(limit) .. ", rank=" .. tostring(rank))
             if rank <= 2 then
+                NextPawnIndex = (i + 1) % len
                 return pawnChar
             end
         else
