@@ -3,6 +3,7 @@ local configfile = modname .. ".json"
 log.info("[" .. modname .. "]" .. " Start")
 
 local _config = {
+	{name = "disable_in_cutscene", type = "bool", default=true},
 	{name = "show_names", type = "bool", default=false},
 	{name = "show_circle", type = "bool", default=true},
     {name = "font_size", type = "float", default = 30},
@@ -25,6 +26,7 @@ local cam_mgr = sdk.get_managed_singleton("app.CameraManager")
 local chr_mgr = sdk.get_managed_singleton("app.CharacterManager")
 local player_list_holder = sdk.get_managed_singleton("app.CharacterListHolder")
 local npc_manager = sdk.get_managed_singleton("app.NPCManager")
+local demoMediator = sdk.get_managed_singleton("app.DemoMediator")
 local camera
 local cam_matrix
 local contact_pt_td = sdk.find_type_definition("via.physics.ContactPoint")
@@ -139,7 +141,18 @@ re.on_frame(function()
 	local should_scan = config.scan_interval <= 0 or frame_counter % config.scan_interval == 0
 	frame_counter = frame_counter + 1
 
-	if should_scan and player and player_list_holder and npc_manager then
+	local in_cutscene = false
+	if should_scan and config.disable_in_cutscene then
+		if demoMediator == nil then
+			demoMediator = sdk.get_managed_singleton("app.DemoMediator")
+		end
+		in_cutscene = demoMediator ~= nil and demoMediator:get_IsPlayingDemo()
+		if in_cutscene then
+			cached_draws = {}
+		end
+	end
+
+	if should_scan and not in_cutscene and player and player_list_holder and npc_manager then
 		local results = cast_ray(cam_matrix[3] + cam_matrix[2] * -(ray_size), cam_matrix[3] + cam_matrix[2], 3, 1, ray_size)
 		-- first hit per game object wins, matching the old break-on-first-match behavior
 		local contact_pos_by_gameobject = {}
