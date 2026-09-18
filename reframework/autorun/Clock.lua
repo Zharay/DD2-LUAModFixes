@@ -14,7 +14,7 @@ local _config={
     {name="ShowBg",type="bool",default=true},
     {name="ShowTimeSlot",type="bool",default=true},
     {name="UseAMPM",type="bool",default=false},
-    {name="CustomFormat",type="string",default="{D}-Day {T} {h}:{m} {a}"},
+    {name="CustomFormat",type="string",default="Day {D} - {T} {h}:{m} {a}"},
     
     {name="Enable",type="mutualbox"},
     {name="DisableInMenu",type="bool",default=false},
