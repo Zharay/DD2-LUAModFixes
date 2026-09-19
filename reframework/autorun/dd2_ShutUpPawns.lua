@@ -24,29 +24,24 @@ local DefaultConfig = {
 -- Adding to the Presets table will also make the preset show up in the UI
 local Presets = {
     Ladders = {
-        "c5d2150e-f024-4021-8edc-179e410403f5", -- This ladder can take us to new heights
-        "b9158f29-e428-4c7b-be84-9de0889d00aa", -- Perhaps new discoveries await us above (or some variant)
-        "8f17c887-4299-43b2-b6c1-f5c1e2e9d034", -- Ladder looks promising, but we have to drop it down
+        "This ladder can take us to new heights",
+        "Perhaps new discoveries await us above",
+        "Ladder looks promising, but we have to drop it down",
     },
     Chests = {
-        "0ea5eb64-a646-407b-b015-42d3fb5232a6", -- Look master, a treasure chest!
-        "0ab64c2e-3605-4fae-b882-8ae024ccaab2", -- I've got a good feeling about this one!
-        "9e51bccc-0d0a-44fc-9426-7963314f01b8", -- Not all chests contain treasure, you know.
-        "3441ac46-edf0-485a-bb50-20a067b715b8", -- Now there's a worthy prize! If only 'tweren't so far away.
+        "Look master, a treasure chest!",
+        "I've got a good feeling about this one!",
+        "Not all chests contain treasure, you know.",
+        "Now there's a worthy prize! If only 'tweren't so far away.",
     },
     Annoyances = {
-        "9c04d00a-a9bb-4c7e-8593-a1e1da0f516c", -- These writings could be of import.
-        "da56eb60-817a-4547-9943-9d2dd5e60fc6", -- Shall we take a closer look? (follow up of above)
-        "0ca0aca5-5daa-4d16-a13c-6c06a1e6223b", -- Different combinations of materials result in different creations.
-        "e7986ade-c754-4ae8-9083-2ebf8241d936", -- Pray, slow your feet! You run too fast
-        "a3a93202-bf1c-4754-b253-e306cfb0216d", -- No time to catch your breath. Try to keep up!
-        "9488ab01-8be3-4ed6-a3b9-4e04dc0d5425", -- (Oxcarts) They can be most convenient, though they travel only during the day.
-        "6140ae62-4d18-4ad1-bc39-4acd1730fd61", -- Different masters prefer different pawns...
-        "e4d3b238-a270-43ba-85d2-146873b9c84e", -- Random Gather comments
-        "d8e2f8f2-f0b6-4284-a238-c09c6c207e38", -- No Swordsman in Party
-        "c0ccb8d9-951e-47bc-b57e-3a75d5ce7fd7", -- We are none of us alike in vocation
-        "e7cb6227-4baf-41c3-9fce-c220694d7d20", -- Let us utilize our unique strengths
-        "f8cc0db3-146d-4a93-b909-16ba8f83f484", -- Everyone's so different vocation
+        "These writings could be of import.",
+        "Shall we take a closer look?", -- (follow up of above)
+        "Different combinations of materials result in different creations.",
+        "Pray, slow your feet! You run too fast",
+        "No time to catch your breath. Try to keep up!",
+        "They can be most convenient, though they travel only during the day.",
+        "Different masters prefer different pawns",
     }
 }
 
@@ -65,7 +60,9 @@ local Session = {
     ProbabilityBlocked = 0,
     ProbabilityTotal = 0,
     CooldownBlocked = 0,
-    UnsavedChanges = false
+    UnsavedChanges = false,
+    IdTextLog = {}, -- every unique ID seen this session, mapped to the text it resolved to (or nil), for investigating the ID format
+    IdTextLogCount = 0
 }
 
 local COLOR_DELETE_BUTTON = 0x700000FF
@@ -91,13 +88,6 @@ end
 
 local MessageLog = {} -- log of the last few messages, separate to Session.Messages so it'll be kept in the right order
 
--- these IDs are known to always resolve to blank message text, so we don't want to log an error for them
-local BlankMessageIds = {
-    ["00000002-0000-0000-0100-010100000000"] = true,
-    ["00000002-0000-0000-0100-000100000000"] = true,
-    ["00000002-0000-0000-0100-000001000000"] = true,
-}
-
 local function addToLog(id, messageText)
     table.insert(MessageLog, 1, {id = id, text = messageText, time = os.clock()})
     if #MessageLog > MESSAGE_LOG_SIZE then
@@ -105,7 +95,8 @@ local function addToLog(id, messageText)
     end
 end
 
-local function getMessageFromGuid(guid)
+-- returns the raw message text for a guid, or nil if there's none (doesn't log errors or build placeholder text)
+local function getRawMessageText(guid)
     if not app_MessageManager then
         app_MessageManager = sdk.get_managed_singleton("app.MessageManager")
     end
@@ -114,30 +105,20 @@ local function getMessageFromGuid(guid)
     end
     local msg = app_MessageManager:getMessage(guid)
     if not msg or msg == "" then
-        local guid_str = guid.ToString and guid:ToString() or tostring(guid)
-        if not BlankMessageIds[guid_str] then
-            logError("failed to find message text for ID " .. guid_str)
-        end
-        msg = "(failed to find message text for ID " .. guid_str .. ")"
+        return nil
     end
     return msg
 end
 
-local function getMessageFromGuidString(message_id)
-    if not message_id or message_id == "" then
-        return nil
+local function getMessageFromGuid(guid)
+    local msg = getRawMessageText(guid)
+    if not msg then
+        local guid_str = guid.ToString and guid:ToString() or tostring(guid)
+        -- lots of candidate slots have no text at all (unused condition/variant combos), so this is just informational
+        logDebug("no message text for ID " .. guid_str)
+        msg = "(failed to find message text for ID " .. guid_str .. ")"
     end
-    local guid_type = sdk.find_type_definition("System.Guid")
-    if not guid_type then
-        return message_id
-    end
-    local success, guid = pcall(function()
-        return ValueType.new(guid_type):call("Parse", message_id)
-    end)
-    if success and guid then
-        return getMessageFromGuid(guid)
-    end
-    return message_id
+    return msg
 end
 
 local app_PawnUtil_isPlayerInTownArea = sdk.find_type_definition("app.PawnUtil") and sdk.find_type_definition("app.PawnUtil"):get_method("isPlayerInTownArea") or nil
@@ -184,9 +165,27 @@ end
 --- Blocklist
 ---
 
-local function blockListAdd(messageId)
+-- blocklist entries are matched as a case-insensitive substring of the spoken message text,
+-- so a single preset entry can cover multiple message variants that share a grouping of words
+local function blockListFindEntry(messageText)
+    if not messageText or messageText == "" then
+        return nil
+    end
+    local haystack = messageText:lower()
     for _, entry in ipairs(Config.BlockList) do
-        if entry.id == messageId then
+        if entry.id and entry.id ~= "" and haystack:find(entry.id:lower(), 1, true) then
+            return entry
+        end
+    end
+    return nil
+end
+
+local function blockListAdd(messageId)
+    if not messageId or messageId == "" then
+        return false
+    end
+    for _, entry in ipairs(Config.BlockList) do
+        if entry.id:lower() == messageId:lower() then
             return false
         end
     end
@@ -205,18 +204,17 @@ local function blockListAddList(list)
     return has_changed
 end
 
-local function blockListContains(messageId)
-    for _, entry in ipairs(Config.BlockList) do
-        if entry.id == messageId then
-            return true
-        end
-    end
-    return false
+local function blockListContains(messageText)
+    return blockListFindEntry(messageText) ~= nil
 end
 
-local function blockListRemove(messageId)
+local function blockListRemove(messageText)
+    local match = blockListFindEntry(messageText)
+    if not match then
+        return false
+    end
     for i, entry in ipairs(Config.BlockList) do
-        if entry.id == messageId then
+        if entry == match then
             table.remove(Config.BlockList, i)
             return true
         end
@@ -336,7 +334,7 @@ local function blockListDrawEntry(entry, entryIndex)
     
     if not is_drawing_defaults then
         ui_id = entry.id .. UI_ID
-        ui_text = getMessageFromGuidString(entry.id) or entry.id
+        ui_text = entry.id
         
         if ui_entry.Action ~= "Default" then
             ui_text = ui_entry.Action .. ": " .. ui_text
@@ -810,11 +808,10 @@ sdk.hook(
         local loggedMessage = nil
         
         if candidate ~= nil and candidate._MsgId ~= nil then
-            loggedId = candidate._MsgId:ToString()
-            
-            local messageText = getMessageFromGuid(candidate._MsgId)
-            if messageText ~= nil and messageText ~= "" then
-                loggedMessage = messageText
+            local text = getMessageFromGuid(candidate._MsgId)
+            if text ~= nil and text ~= "" then
+                loggedId = text
+                loggedMessage = text
             end
         end
         
@@ -822,23 +819,27 @@ sdk.hook(
             local cur_candidate = segment._Candidates[i]
             if cur_candidate ~= nil and cur_candidate._MsgId ~= nil then
                 local msgid = cur_candidate._MsgId:ToString()
-                logDebug("_Candidates[" .. i .. "].Guid = " .. msgid)
+                local candidateText = getMessageFromGuid(cur_candidate._MsgId)
+                logDebug("_Candidates[" .. i .. "].Guid = " .. msgid .. ", text = " .. tostring(candidateText))
                 
-                if not loggedId then
-                    loggedId = msgid
+                if Session.IdTextLog[msgid] == nil then
+                    Session.IdTextLog[msgid] = candidateText or ""
+                    Session.IdTextLogCount = Session.IdTextLogCount + 1
                 end
                 
-                if not loggedMessage then
-                    local messageText = getMessageFromGuid(cur_candidate._MsgId)
-                    if messageText ~= nil and messageText ~= "" then
-                        loggedMessage = messageText
-                        loggedId = msgid
-                    end
+                if not loggedId and candidateText ~= nil and candidateText ~= "" then
+                    loggedId = candidateText
                 end
                 
-                if bannedId == nil then
-                    if blockListContains(msgid) then
-                        bannedId = msgid
+                if not loggedMessage and candidateText ~= nil and candidateText ~= "" then
+                    loggedMessage = candidateText
+                    loggedId = candidateText
+                end
+                
+                if bannedId == nil and candidateText ~= nil and candidateText ~= "" then
+                    local matchedEntry = blockListFindEntry(candidateText)
+                    if matchedEntry then
+                        bannedId = matchedEntry.id
                     end
                 end
             end
@@ -1051,6 +1052,15 @@ re.on_draw_ui(function()
                     imgui.same_line()
                     imgui.text(formatTimeDifference(currentTime - message.time) .. ": " .. message.text)
                 end
+            end
+            imgui.tree_pop()
+        end
+        
+        if imgui.tree_node("Dump message log (" .. Session.IdTextLogCount .. " unique messages seen)###supIdTextLog") then
+            imgui.text("Every unique message seen this session, with the text it resolved to.")
+            imgui.text("Use this to obtain a full list of messages and their IDs.")
+            if imgui.button("Dump to dd2_ShutUpPawns_idlog.json") then
+                json.dump_file("dd2_ShutUpPawns_idlog.json", Session.IdTextLog)
             end
             imgui.tree_pop()
         end
