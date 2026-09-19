@@ -78,6 +78,7 @@ local itemNum = nil
 local itemEventType = nil
 local itemSource = nil
 local NextPawnIndex = 0
+local MaxPartyPawns = 3 -- player + up to 3 pawns is the max party size
 
 local function Log(msg)
     if debug then
@@ -113,11 +114,18 @@ local function GetPawn(extraWeight)
     if len <= 0 then
         return nil
     end
+    -- party never has more than MaxPartyPawns pawns, so cap the scan regardless of what get_Count() reports
+    local scanCount = math.min(len, MaxPartyPawns)
     local startIndex = NextPawnIndex % len
-    for offset = 0, len - 1, 1 do
+    for offset = 0, scanCount - 1, 1 do
         local i = (startIndex + offset) % len
-        local pawnChar = list:call("get_Item", i)
-        if pawnChar then
+        -- isolate each pawn's evaluation so one bad/stale pawn can't abort the whole scan
+        local ok, result = pcall(function()
+            local pawnChar = list:call("get_Item", i)
+            if not pawnChar then
+                Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
+                return nil
+            end
             local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
             local weight = ItemManager:call("getStorageWeight(app.Character)", pawnChar)
             local rank = ItemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
@@ -125,11 +133,15 @@ local function GetPawn(extraWeight)
                 .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
                 .. ", limit=" .. tostring(limit) .. ", rank=" .. tostring(rank))
             if rank <= 2 then
-                NextPawnIndex = (i + 1) % len
                 return pawnChar
             end
-        else
-            Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
+            return nil
+        end)
+        if not ok then
+            Log("GetPawn: pawn " .. tostring(i) .. " evaluation FAILED, skipping: " .. tostring(result))
+        elseif result then
+            NextPawnIndex = (i + 1) % len
+            return result
         end
     end
     return nil
