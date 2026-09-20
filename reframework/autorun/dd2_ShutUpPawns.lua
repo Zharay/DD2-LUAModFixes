@@ -80,7 +80,7 @@ local app_MessageManager = sdk.get_managed_singleton("app.MessageManager")
 
 local LOG_PREFIX = "[ShutUpPawns] "
 local function logDebug(message)
-    log.debug(LOG_PREFIX .. message)
+    log.log(LOG_PREFIX .. message)
 end
 local function logError(message)
     log.error(LOG_PREFIX .. message)
@@ -479,7 +479,7 @@ end
 --- Config
 ---
 
-local function config_reset()
+local function config_reset(seedBlockList)
     Config = {}
     tableCopy(Config, DefaultConfig)
     
@@ -487,14 +487,16 @@ local function config_reset()
     tableCopy(Config.DefaultParams, DefaultConfig.DefaultParams)
     
     Config.BlockList = {}
-    blockListAddList(Presets.Ladders)
+    if seedBlockList then
+        blockListAddList(Presets.Ladders)
+    end
 end
 
 local function config_load()
     UI_ID = UI_ID + 1 -- collapse blocklist entries
-    config_reset()
-    
-    local config = json.load_file("dd2_ShutUpPawns.json") or {}
+    local config = json.load_file("dd2_ShutUpPawns.json")
+    config_reset(config == nil)
+    config = config or {}
     
     for k, v in pairs(config) do
         if k ~= "BlockList" and k ~= "BlockListActions" and k ~= "DefaultParams" then
@@ -1056,9 +1058,9 @@ re.on_draw_ui(function()
             imgui.tree_pop()
         end
         
-        if imgui.tree_node("Dump message log (" .. Session.IdTextLogCount .. " unique messages seen)###supIdTextLog") then
-            imgui.text("Every unique message seen this session, with the text it resolved to.")
-            imgui.text("Use this to obtain a full list of messages and their IDs.")
+        if imgui.tree_node("ID/Text log (" .. Session.IdTextLogCount .. " unique IDs seen)###supIdTextLog") then
+            imgui.text("Every unique message ID seen this session, with the text it resolved to.")
+            imgui.text("Use this to compare ID formats across messages (for investigating ID generation changes).")
             if imgui.button("Dump to dd2_ShutUpPawns_idlog.json") then
                 json.dump_file("dd2_ShutUpPawns_idlog.json", Session.IdTextLog)
             end
