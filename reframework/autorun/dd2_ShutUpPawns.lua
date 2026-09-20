@@ -80,7 +80,7 @@ local app_MessageManager = sdk.get_managed_singleton("app.MessageManager")
 
 local LOG_PREFIX = "[ShutUpPawns] "
 local function logDebug(message)
-    log.log(LOG_PREFIX .. message)
+    log.info(LOG_PREFIX .. message)
 end
 local function logError(message)
     log.error(LOG_PREFIX .. message)
