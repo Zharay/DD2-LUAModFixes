@@ -138,7 +138,14 @@ end
 
 local last_logged_stage = -1
 
+-- Prevents apply_custom_weather from re-entering itself: changeWeather/changeWeatherBackWorld
+-- are hooked below, and calling weather_utils.changeWeather() from inside this function can
+-- retrigger those same hooks. Without this guard that becomes an unbounded feedback loop.
+local is_applying_weather = false
+
 local function apply_custom_weather()
+    if is_applying_weather then return end
+
     -- 1. Abort completely if we are not in the Unmoored World
     if not is_in_unmoored_world() then return end
 
@@ -160,10 +167,18 @@ local function apply_custom_weather()
         
         local weather_entity = udb.get_entity('weather', target_weather_id)
         
-        if weather_entity then
-            -- Re-apply the weather state to ensure the engine hasn't overwritten it
-            weather_utils.changeWeather(weather_entity, false) 
-            
+        -- Only issue a change if the weather isn't already what we want; otherwise every
+        -- hook firing forces a brand new transition, which never lets the game settle.
+        if weather_entity and not weather_utils.isCurrentWeather(weather_entity) then
+            is_applying_weather = true
+            local ok, err = pcall(weather_utils.changeWeather, weather_entity, false)
+            is_applying_weather = false
+
+            if not ok then
+                log.error("[Parting The Clouds] Failed to change weather: " .. tostring(err))
+                return
+            end
+
             -- Only print to the log if the stage actually changed
             if last_logged_stage ~= current_stage then
                 log.info("[Parting The Clouds] Weather synced to: " .. tostring(current_stage) .. " dead Purgeners.")
