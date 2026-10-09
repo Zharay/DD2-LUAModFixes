@@ -285,71 +285,6 @@ local AbilityFormat={
     [50]={format="-{v1} Weight Level When Moving",hint="移動時の重量ランクをValue段階下げる(1.000000,0.000000)"},
 }
 
-local function printEnum(enumName)
-    local type=sdk.find_type_definition(enumName)
-    local fields=type:get_fields()
-    for _,field in pairs(fields) do
-        if field:get_data()~=nil and field:get_data()>0 then
-            print(string.format("[%d]=\"%s\",",field:get_data(),field:get_name()))
-        end
-    end
-end
-local function printType(Name)
-    local type=sdk.find_type_definition(Name)
-    print("--",type:get_full_name())
-    local fields=type:get_fields()
-    for _,field in pairs(fields) do
-       print(string.format("%s=nil,",field:get_name()))
-    end
-end
-
-local function printAllTypes()
-    for _,type in pairs(ItemParamTypes) do
-        printType(type)
-    end
-end
-
-local function printJobAbility()
-    local player_man=sdk.get_managed_singleton("app.CharacterManager")
-    local player=player_man:get_ManualPlayer()
-    local abilityParam=player:get_Human().Parameter.AbilityParam
-    local t=abilityParam.JobAbilityParameters
-    for i=0,t:get_Count()-1 do
-        local x=t[i].Abilities
-        for j=0,x:get_Count()-1 do
-            local ab=x[j]
-            local hint=string.format("%s(%f,%f)",ab.Comment,ab.Value,ab.Value2)
-            log.info(string.format("[%d]={hintname=\"%s\",hint=\"%s\"},",ab.AbilityID,ab.AbilityName,hint))
-            print(string.format("[%d]={hint=\"%s\"},",ab.AbilityID,hint))
-        end
-    end
-end
-
-local function printRings()
-    local im=sdk.get_managed_singleton("app.ItemManager")
-    -- GetEnumerator/Get_Current/Get_Value not working
-    local iter=im._ItemDataDict:call('System.Collections.IEnumerable.GetEnumerator()')
-    local dup={}
-    iter:MoveNext()
-    while iter._current.value~=nil do
-        local itemCommonParam=iter._current.value
-        if itemCommonParam:get_type_definition():is_a("app.ItemArmorParam") 
-            and itemCommonParam._EquipCategory==sdk.find_type_definition("app.ItemEquipCategory"):get_field("Jewelry"):get_data() then 
-            if itemCommonParam._Special>0 then
-                if dup[itemCommonParam._Special]==nil then dup[itemCommonParam._Special]={} end
-                dup[itemCommonParam._Special][itemCommonParam]=0
-            end
-        end
-        iter:MoveNext()
-    end
-    for _Special,Params in pairs(dup) do
-        local hint=""
-        for itemCommonParam,_ in pairs(Params) do
-            hint=hint..string.format("(%d,%s,%d,%d,%d)",itemCommonParam._Id,itemCommonParam:get_Name(),itemCommonParam._SpecialValue,itemCommonParam._SpecialValue2,itemCommonParam._SpecialValue3)
-        end
-        print(string.format("[%d]={enable=true,format=\"{v1} {v2} {v3}\",hint=\"%s\"},",_Special,hint))
-    end
-end
 --[[
     [0]="Japanese"
     [1]="English",
@@ -394,13 +329,11 @@ local function Init()
     messageManager=sdk.get_managed_singleton("app.MessageManager")
 
     local om=sdk.get_managed_singleton("app.OptionManager")
-    if guiManager==nil or characterManager==nil or messageManager==nil or om==nil or om._OptionItems==nil then return end
-    local optionID=sdk.find_type_definition("app.OptionID"):get_field("TextLanguage"):get_data()
-    if optionID==nil then return end
-    if not om._OptionItems:ContainsKey(optionID) then
-        Log("Can't find _OptionItems[optionID]")
+    if guiManager==nil or characterManager==nil or messageManager==nil or om==nil or om._OptionItems==nil then
         return
     end
+    local optionID=sdk.find_type_definition("app.OptionID"):get_field("TextLanguage"):get_data()
+    if optionID==nil or not om._OptionItems:ContainsKey(optionID) then return end
     local optionItem=om._OptionItems:get_Item(optionID)
     local lng=optionItem:get_FixedValueModel():get_StringValue()
 
@@ -410,7 +343,6 @@ local function Init()
         RewarpOnNonSpace=false
     end
     if lng==prevInitLanguage then
-        Log("Ignore dup init")
         return
     end
     initialized=false
@@ -419,7 +351,6 @@ local function Init()
     if config.specifyTransFile~="" then
         filename=string.format("%s.%s.json",modname,config.specifyTransFile)
     end
-    Log("Try Load ",lng)
     local tmp=json.load_file(filename)
     if tmp~=nil and tmp.FieldFormat~=nil then
         FieldFormat=tmp.FieldFormat
@@ -439,7 +370,7 @@ local function Init()
         end
         Log("Load From",filename)
     else
-        Log("Invalid File,Use default")
+        Log("Missing or invalid language file; using defaults:",filename)
     end
     ItemDescCache={}
     SkillDescCache={}
@@ -482,10 +413,6 @@ local function float2stringEX(v)
     end
     return string.format("%.2f",v)
 end
---printJobAbility()
---printRings()
---printEnum("app.ItemEquipCategory")
---printEnum("via.Language")
 local function Join(...)
     local ret=""
     for k,v in ipairs{...} do
@@ -500,7 +427,6 @@ local function TranslateFields(param,paramtype)
     local fields=paramtype:get_fields()
     --Iterate fields and convert to string
     for _,field in pairs(fields) do
-        --Log(field:get_name(),field:get_data(param),field:get_type():get_full_name())
         local fieldname=field:get_name()
         local format=FieldFormat[fieldname]
         local fieldtype=field:get_type():get_full_name()
@@ -518,7 +444,7 @@ local function TranslateFields(param,paramtype)
                 if tryInt~=nil then
                     isIgnore=(tryInt<=0)
                 else
-                    Log("Other Type",type)
+                    Log("Unsupported field value:",fieldname,fieldtype,tostring(data))
                 end
             end
             --to string
@@ -534,9 +460,6 @@ local function TranslateFields(param,paramtype)
                     end
                 end
             end
-        else
-            --Log("Ignore "..fieldname)
-            --Log(string.format("%s=nil,",fieldname))
         end
         ret=Join(ret,fieldMsg)
     end
@@ -645,7 +568,6 @@ local function TranslateWeaponSP(param)
             if WeaponSpecialFormat[param._Id].curve then--use curve
                 local additionalData=im:get_WeaponAdditionalDataDict()[param._WeaponId]
                 local curve=additionalData and additionalData.Curve
-                print("!!",param._WeaponId,additionalData,curve)
                 if curve then
                     local keyframeCount=curve:getKeysCount()
                     for i=0,keyframeCount-1 do
@@ -763,10 +685,8 @@ local function GetItemDetail(itemCommonParam)
 end
 
 local function GetOrAddItemDesc(originalMessage,itemCommonParam)
-    --if tmpStr~=nil then return tmpStr end
     local Id=itemCommonParam._Id
     if ItemDescCache[Id] ==nil then
-        Log("Add Item Desc To Cache")
         local appendtext=GetItemDetail(itemCommonParam)
         if config.removeOriginalText then
             if appendtext~="" then
@@ -780,11 +700,8 @@ local function GetOrAddItemDesc(originalMessage,itemCommonParam)
             end
             ItemDescCache[Id]=string.format("%s\n%s",originalMessage,appendtext)
         end
-        Log(ItemDescCache[Id])
     end
-    --can't cache managed_string ,causes crash
-    --Log(ItemDescCache[Id])
-    return sdk.create_managed_string(ItemDescCache[Id])
+    return ItemDescCache[Id]
 end
 
 local function GetAbilityDetail(player,Id)
@@ -801,56 +718,90 @@ local function GetAbilityDetail(player,Id)
 end
 
 local function GetOrAddSkillDesc(originalMessage,Id)
-    --if tmpStr~=nil then return tmpStr end
     if SkillDescCache[Id] ==nil then
-        Log("Add Skill Desc To Cache")
         local player_man=sdk.get_managed_singleton("app.CharacterManager")
         local player=player_man:get_ManualPlayer()
         if player~=nil then
             local appendtext=GetAbilityDetail(player,Id)
             SkillDescCache[Id]=string.format("%s\n%s",originalMessage,appendtext)
-            Log(SkillDescCache[Id])
         else
             return sdk.create_managed_string(originalMessage)
         end
 
     end
     --can't cache managed_string ,causes crash
-    --Log(SkillDescCache[Id])
     return sdk.create_managed_string(SkillDescCache[Id])
 end
 
-local tmpItemWindow=nil
-local tmpItem=nil
-sdk.hook(
-    --sdk.find_type_definition("app.GUIBase.ItemWindowRef"):get_method("setup(app.ItemDefine.StorageData)"),
-    sdk.find_type_definition("app.GUIBase.ItemWindowRef"):get_method("setup(app.ItemCommonParam, System.Int32, System.Boolean)"),
-    function (args)
-        if not initialized then return end
-        local this=sdk.to_managed_object(args[2])
-        local itemCommonParam=sdk.to_managed_object(args[3])
-        if itemCommonParam==nil or this ==nil then return end
-        tmpItemWindow=this
-        tmpItem=itemCommonParam
-    end,
-    function ()
-        if tmpItemWindow~=nil and tmpItem~=nil then
-            --print(tmpItemWindow._TxtInfo:get_Message():ToString())
-            local message=GetOrAddItemDesc(tmpItemWindow._TxtInfo:get_Message(),tmpItem)
-            tmpItemWindow._TxtInfo:set_Message(message)
-            tmpItemWindow=nil
-            tmpItem=nil
-        end
-    end
-)
+local itemUIFields={}
 
-local function LogTypeMethods(game_object)
-    x=game_object:get_type_definition():get_methods()
-    for k,v in pairs(x) do
-        Log(v:get_name())
+local function ReadSelectedItem(info)
+    if info==nil then return nil end
+    for _,field in ipairs(info:get_type_definition():get_fields()) do
+        local fieldType=field:get_type()
+        local fieldName=fieldType:get_full_name()
+        if fieldName=="app.ItemDefine.StorageData" then
+            local storage=field:get_data(info)
+            if storage~=nil and storage._ItemData~=nil then return storage._ItemData end
+        elseif fieldType:is_a("app.ItemCommonParam") then
+            local item=field:get_data(info)
+            if item~=nil then return item end
+        elseif fieldName=="app.GUIBase.ShopGoodsInfo" then
+            local goods=field:get_data(info)
+            if goods~=nil and goods.ItemData~=nil then return goods.ItemData end
+        end
     end
 end
 
+-- Read the current UI state directly; updated menus can bypass the old setup hooks.
+local function UpdateItemWindows()
+    local menus=guiManager._GUIList
+    if menus==nil then return end
+    for i=0,menus:get_Count()-1 do
+        local menu=menus:get_Item(i)
+        if menu~=nil then
+            local menuType=menu:get_type_definition()
+            local menuName=menuType:get_full_name()
+            local fields=itemUIFields[menuName]
+            if fields==nil then
+                fields={
+                    window=menuType:get_field("ItemWindow"),
+                    grid=menuType:get_field("ItemGrid"),
+                    shop=menuType:get_field("MainList"),
+                    list=menuType:get_field("ListCtrl"),
+                }
+                itemUIFields[menuName]=fields
+            end
+            if fields.window~=nil then
+                local window=fields.window:get_data(menu)
+                if window~=nil and window._TxtInfo~=nil and window._TxtName~=nil then
+                    local controller=nil
+                    if fields.grid~=nil then
+                        local grid=fields.grid:get_data(menu)
+                        controller=grid and grid._ItemCtrl
+                    elseif fields.shop~=nil then
+                        local shop=fields.shop:get_data(menu)
+                        controller=shop and shop._ScrlCtrl
+                    elseif fields.list~=nil then
+                        controller=fields.list:get_data(menu)
+                    end
+                    local item=controller and ReadSelectedItem(controller:get_SelectedInfo())
+                    if item~=nil and window._TxtName:get_Message()==item:get_Name()
+                        and not (isItem(item) and ItemBuffFormat~=nil and characterManager:get_ManualPlayer()==nil) then
+                        local current=window._TxtInfo:get_Message()
+                        if current~=nil and (ItemDescCache[item._Id]==nil or current~=ItemDescCache[item._Id]) then
+                            local message=GetOrAddItemDesc(current,item)
+                            if current~=message then
+                                window._TxtInfo:set_Message(sdk.create_managed_string(message))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+Log("Hook-independent item UI updater configured for LateUpdateBehavior.")
 
 local tmpJobWindow=nil
 local tmpStatusWindow=nil
@@ -914,7 +865,6 @@ sdk.hook(
             local abilityId=nil
             local cursor=tmpJobWindow._Job_AbilityListCtrl:get_SelectedInfo()
             -- is selecting ability in left
-            --print("---",abilityId,tmpJobWindow._TxtJobAbilityInfo:get_Message())
             if cursor.ContenstsType==MainContentsInfoKindAbility then
                 abilityId=cursor.Ability.AbilityID
                 if abilityId~=nil and abilityId>0 then
@@ -947,9 +897,12 @@ function()
     end
 end)
 
-re.on_frame(function()
+re.on_application_entry("LateUpdateBehavior",function()
     if not initialized then
         Init()
+    end
+    if initialized then
+        UpdateItemWindows()
     end
 end)
 
