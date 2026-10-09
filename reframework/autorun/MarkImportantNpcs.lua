@@ -4,6 +4,7 @@ log.info("[" .. modname .. "]" .. " Start")
 
 local _config = {
 	{name = "disable_in_cutscene", type = "bool", default=true},
+	{name = "disable_in_menu", type = "bool", default=true},
 	{name = "show_names", type = "bool", default=false},
 	{name = "show_circle", type = "bool", default=true},
     {name = "font_size", type = "float", default = 30},
@@ -27,6 +28,30 @@ local chr_mgr = sdk.get_managed_singleton("app.CharacterManager")
 local player_list_holder = sdk.get_managed_singleton("app.CharacterListHolder")
 local npc_manager = sdk.get_managed_singleton("app.NPCManager")
 local demoMediator = sdk.get_managed_singleton("app.DemoMediator")
+local guiManager = sdk.get_managed_singleton("app.GuiManager")
+local pauseManager = sdk.get_managed_singleton("app.PauseManager")
+
+local function safe_call(obj, method)
+	if obj == nil then return false end
+	local ok, result = pcall(obj.call, obj, method)
+	return ok and result == true
+end
+
+local function is_in_cutscene()
+	if demoMediator == nil then
+		demoMediator = sdk.get_managed_singleton("app.DemoMediator")
+	end
+	return safe_call(demoMediator, "get_IsPlayingDemo")
+end
+
+-- full-screen UIs (main menu, shops, skill menu, etc.) either load a GUI or pause the game
+local function is_in_menu()
+	if guiManager == nil then guiManager = sdk.get_managed_singleton("app.GuiManager") end
+	if pauseManager == nil then pauseManager = sdk.get_managed_singleton("app.PauseManager") end
+	return safe_call(guiManager, "get_IsLoadGui")
+		or safe_call(guiManager, "isPausedGUI")
+		or safe_call(pauseManager, "isPausedAny")
+end
 local camera
 local cam_matrix
 local contact_pt_td = sdk.find_type_definition("via.physics.ContactPoint")
@@ -122,9 +147,23 @@ end
 
 local frame_counter = 0
 local cached_draws = {}
+local suppressed = false
 
 re.on_frame(function()
 	if not config.show_names and not config.show_circle and not config.show_icon then
+		return
+	end
+	local should_scan = config.scan_interval <= 0 or frame_counter % config.scan_interval == 0
+	frame_counter = frame_counter + 1
+
+	-- cutscene/menu state is only re-checked on scan frames; between scans the cached result is reused
+	if should_scan then
+		suppressed = (config.disable_in_cutscene and is_in_cutscene()) or (config.disable_in_menu and is_in_menu())
+		if suppressed then
+			cached_draws = {}
+		end
+	end
+	if suppressed then
 		return
 	end
 	imgui.push_font(font)
@@ -138,21 +177,7 @@ re.on_frame(function()
 		return
 	end
 
-	local should_scan = config.scan_interval <= 0 or frame_counter % config.scan_interval == 0
-	frame_counter = frame_counter + 1
-
-	local in_cutscene = false
-	if should_scan and config.disable_in_cutscene then
-		if demoMediator == nil then
-			demoMediator = sdk.get_managed_singleton("app.DemoMediator")
-		end
-		in_cutscene = demoMediator ~= nil and demoMediator:get_IsPlayingDemo()
-		if in_cutscene then
-			cached_draws = {}
-		end
-	end
-
-	if should_scan and not in_cutscene and player and player_list_holder and npc_manager then
+	if should_scan and player and player_list_holder and npc_manager then
 		local results = cast_ray(cam_matrix[3] + cam_matrix[2] * -(ray_size), cam_matrix[3] + cam_matrix[2], 3, 1, ray_size)
 		-- first hit per game object wins, matching the old break-on-first-match behavior
 		local contact_pos_by_gameobject = {}

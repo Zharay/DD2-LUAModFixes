@@ -1,0 +1,81 @@
+name: Build Release Zips
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.lua"
+      - "**.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build zip files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          # Usage: make_zip <ZipName> <file> [file ...]
+          # Paths are relative to the repo root so the zip keeps the "reframework/..." structure.
+          make_zip() {
+            local name="$1"; shift
+            for f in "$@"; do
+              [[ -f "$f" ]] || { echo "::error::Missing file for $name.zip: $f"; exit 1; }
+            done
+            zip -X "dist/$name.zip" "$@"
+          }
+
+          # ---- Add / edit entries below ----
+
+          make_zip BetterBetterItemDescription \
+            reframework/autorun/BetterBetterItemDescription.lua \
+            reframework/data/BetterBetterItemDescription.Arabic.json \
+            reframework/data/BetterBetterItemDescription.English.json \
+            reframework/data/BetterBetterItemDescription.SimplelifiedChinese.json \
+            reframework/data/BetterBetterItemDescription.TransitionalChinese.json
+
+          make_zip Clock \
+            reframework/autorun/Clock.lua
+
+          make_zip HideHelmetsOutofCombat \
+            reframework/autorun/HideHelmetsOutofCombat.lua
+
+          make_zip MarkImportantNpcs \
+            reframework/autorun/MarkImportantNpcs.lua
+
+          make_zip ShutUpPawns \
+            reframework/autorun/ShutUpPawns.lua
+
+          make_zip SkillDescription \
+            reframework/autorun/SkillDescription.lua \
+            reframework/data/SkillDescription.English.json \
+            reframework/data/SkillDescription.Para.json \
+            reframework/data/SkillDescription.SimplelifiedChinese.json
+
+          make_zip carry_it_for_me \
+            reframework/autorun/carry_it_for_me.lua
+
+          # ---- End of entries ----
+
+          ls -l dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" dist/*.zip \
+            --target "${{ github.sha }}" \
+            --title "Build ${{ github.run_number }} ($(date -u +%Y-%m-%d))" \
+            --notes "Automated build from commit ${{ github.sha }}." \
+            --latest
