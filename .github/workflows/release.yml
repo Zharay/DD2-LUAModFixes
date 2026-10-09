@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "**.lua"
-      - "**.json"
+      - "reframework/**"
   workflow_dispatch:
 
 permissions:
@@ -66,6 +65,9 @@ jobs:
 
           # ---- End of entries ----
 
+          # ---- Build All-In-One zip ----
+          zip -X -r dist/All-In-One.zip reframework
+
           ls -l dist
 
       - name: Create GitHub release
@@ -76,6 +78,6 @@ jobs:
           TAG="build-${{ github.run_number }}"
           gh release create "$TAG" dist/*.zip \
             --target "${{ github.sha }}" \
-            --title "Build ${{ github.run_number }} ($(date -u +%Y-%m-%d))" \
+            --title "Build ${{ github.run_number }}" \
             --notes "Automated build from commit ${{ github.sha }}." \
             --latest
