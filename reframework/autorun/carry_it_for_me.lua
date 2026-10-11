@@ -6,6 +6,7 @@ local imgui = imgui
 local log = log
 local json = json
 local draw = draw
+local thread = thread
 local debug = false
 
 if debug then
@@ -72,11 +73,6 @@ end
 -- called by app.SearchDeadBodyInteractController.executeInteract(System.UInt32, app.Character)
 
 -- id, num, charac, is notice, .....
-local ItemManager = nil
-local itemID = nil
-local itemNum = nil
-local itemEventType = nil
-local itemSource = nil
 local NextPawnIndex = 0
 local MaxPartyPawns = 3 -- player + up to 3 pawns is the max party size
 
@@ -86,21 +82,72 @@ local function Log(msg)
     end
 end
 
-local function ClearPendingItem()
-    ItemManager = nil
-    itemID = nil
-    itemNum = nil
-    itemEventType = nil
-    itemSource = nil
+local StorageListSignature = "getStorageList(app.Character, System.Predicate`1<app.ItemManager.StorageMasterData>)"
+
+local function GetStorageList(itemManager, player)
+    local list = itemManager:call(StorageListSignature, player, nil)
+    if not list then
+        error("player storage list unavailable")
+    end
+    return list
 end
 
-local function GetPawn(extraWeight)
+local function SnapshotStorage(itemManager, player)
+    -- Copy counts before getItem; keeping managed entries would observe their later mutations.
+    local counts = {}
+    local list = GetStorageList(itemManager, player)
+    for i = 0, list:call("get_Count") - 1 do
+        local storage = list:call("get_Item", i)
+        counts[storage._StorageId] = { id = storage._ItemId, num = storage._Num }
+    end
+    return counts
+end
+
+local function FindAddedStorage(pickup)
+    local matching, changed = {}, {}
+    local changedID = nil
+    local ambiguous = false
+    local list = GetStorageList(pickup.manager, pickup.player)
+    for i = 0, list:call("get_Count") - 1 do
+        local storage = list:call("get_Item", i)
+        local previous = pickup.counts[storage._StorageId]
+        local previousNum = previous and previous.id == storage._ItemId and previous.num or 0
+        local added = storage._Num - previousNum
+        if added > 0 then
+            local entry = { storage = storage, num = added }
+            changed[#changed + 1] = entry
+            if changedID and changedID ~= storage._ItemId then
+                ambiguous = true
+            end
+            changedID = storage._ItemId
+            if storage._ItemId == pickup.id then
+                matching[#matching + 1] = entry
+            end
+        end
+    end
+    if #matching > 0 then
+        return matching
+    end
+    -- Some pickups resolve to a different stored item. Never guess between unrelated changes.
+    if #changed > 0 and not ambiguous then
+        Log("pickup itemID=" .. tostring(pickup.id) .. " resolved to stored itemID=" .. tostring(changedID))
+        return changed
+    end
+    if ambiguous then
+        Log("skipped: multiple different items added; cannot safely resolve itemID=" .. tostring(pickup.id))
+    else
+        Log("no newly added storage found for itemID=" .. tostring(pickup.id) .. " (pickup failed or already handled by a nested hook)")
+    end
+    return {}
+end
+
+local function GetPawn(itemManager, extraWeight)
     local pawnMgr = GetPawnManager();
     if not pawnMgr then
         Log("GetPawn: PawnManager singleton unavailable")
         return
     end
-    if not ItemManager then
+    if not itemManager then
         Log("GetPawn: ItemManager unavailable")
         return
     end
@@ -126,9 +173,9 @@ local function GetPawn(extraWeight)
                 Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
                 return nil
             end
-            local limit = ItemManager:call("getWeightLimit(app.Character)", pawnChar)
-            local weight = ItemManager:call("getStorageWeight(app.Character)", pawnChar)
-            local rank = ItemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
+            local limit = itemManager:call("getWeightLimit(app.Character)", pawnChar)
+            local weight = itemManager:call("getStorageWeight(app.Character)", pawnChar)
+            local rank = itemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
             Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
                 .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
                 .. ", limit=" .. tostring(limit) .. ", rank=" .. tostring(rank))
@@ -147,7 +194,11 @@ local function GetPawn(extraWeight)
     return nil
 end
 
-local function TryPassPendingItem()
+local function TryPassPendingItem(pickup)
+    if not pickup then return end
+    local ItemManager = pickup.manager
+    local itemID, itemNum = pickup.id, pickup.num
+    local itemEventType, itemSource = pickup.eventType, pickup.source
     Log("TryPassPendingItem called, source=" .. tostring(itemSource) .. ", itemID=" .. tostring(itemID) .. ", itemNum=" .. tostring(itemNum) .. ", itemEventType=" .. tostring(itemEventType))
     if not Config.Enabled then
         Log("skipped: mod is disabled in config")
@@ -167,54 +218,76 @@ local function TryPassPendingItem()
     end
     do
         local player = GetPlayer()
-        if not player then
-            Log("skipped: player character unavailable")
+        if not player or player:get_CharaID() ~= pickup.player:get_CharaID() then
+            Log("skipped: player character unavailable or changed during pickup")
             return
         end
-        local playerID = player:get_CharaID()
-        local stroageData = ItemManager:getStorageData(itemID, playerID)
-        if stroageData and stroageData._ItemData then
-            local itemData = stroageData._ItemData
-            Log("weight: " .. tostring(itemData._Weight * 0.01))
+        local remaining = itemNum
+        for _, entry in ipairs(FindAddedStorage(pickup)) do
+            if remaining <= 0 then break end
+            local storageData = entry.storage
+            local transferNum = math.min(remaining, entry.num, storageData._Num)
+            local itemData = storageData:call("get_ItemData()")
+            if not itemData then
+                itemData = ItemManager:call("getItemData(app.ItemDefine.StorageData, System.Boolean)", storageData, false)
+            end
+            if not itemData then
+                Log("item metadata unavailable for stored itemID=" .. tostring(storageData._ItemId))
+                return
+            end
+            local extraWeight = storageData:call("calcWeightPerPiece()") * 0.01 * transferNum
+            Log("weight: " .. tostring(extraWeight) .. " for " .. tostring(transferNum) .. " item(s)")
 
             -- Equipment can have no ItemDataParam, and therefore no subcategory.
-            local ok, param = pcall(function() return itemData:call("get_ItemParam()") end)
-            local subCategory = ok and param and param:get_field("_SubCategory")
+            local param = itemData:call("get_ItemParam()")
+            local subCategory = param and param:get_field("_SubCategory")
 
             local isCategoryEnabled = Config.ItemCategory[tostring(itemData._Category)]
             local isSubCategoryEnabled = subCategory == nil or Config.ItemSubCategory[tostring(subCategory)] == true
             Log("category=" .. tostring(itemData._Category) .. " (enabled=" .. tostring(isCategoryEnabled) .. "), subCategory=" .. tostring(subCategory) .. " (enabled=" .. tostring(isSubCategoryEnabled) .. ")")
-            if isCategoryEnabled and isSubCategoryEnabled then
-                local pawn = GetPawn(stroageData._ItemData._Weight * 0.01)
+            if storageData._IsEquipped then
+                Log("skipped: newly added item is equipped")
+            elseif isCategoryEnabled and isSubCategoryEnabled then
+                local pawn = GetPawn(ItemManager, extraWeight)
                 if pawn then
                     -- storage, num, char id to, is new
-                    Log("passing item " .. tostring(itemID) .. " x" .. tostring(itemNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
+                    Log("passing item " .. tostring(storageData._ItemId) .. " x" .. tostring(transferNum) .. " to pawn " .. tostring(pawn:get_CharaID()))
+                    local beforeNum = storageData._Num
+                    local storageID = storageData._StorageId
                     local ok, err = pcall(function()
-                        ItemManager:passItem(stroageData, itemNum, pawn:get_CharaID(), true)
+                        ItemManager:call("passItem(app.ItemDefine.StorageData, System.Int32, app.Character, System.Boolean)",
+                            storageData, transferNum, pawn, true)
                     end)
-                    if ok then
-                        Log("passItem completed")
-                    else
+                    if not ok then
                         Log("passItem FAILED: " .. tostring(err))
+                        return
                     end
+                    local after = SnapshotStorage(ItemManager, player)[storageID]
+                    local afterNum = after and after.num or 0
+                    if beforeNum - afterNum ~= transferNum then
+                        Log("passItem did not remove the expected quantity from player storage; stopping")
+                        return
+                    end
+                    Log("passItem completed")
+                    remaining = remaining - transferNum
                 else
                     Log("no eligible pawn found (all pawns overweight or full)")
                 end
             else
                 Log("skipped: category/subcategory filtered out by config")
             end
-        else
-            Log("no storage data found for itemID=" .. tostring(itemID))
         end
     end
 end
 
 local function PassItemToPawn(ret)
-    local ok, err = pcall(TryPassPendingItem)
+    local storage = thread.get_hook_storage()
+    local pickup = storage.carryItForMePickup
+    storage.carryItForMePickup = nil
+    local ok, err = pcall(TryPassPendingItem, pickup)
     if not ok then
         Log("ERROR while passing item: " .. tostring(err))
     end
-    ClearPendingItem()
     return ret
 end
 
@@ -263,17 +336,27 @@ local function CapturePickup(label, itemMgrPtr, id, num, charaPtr, optionPtr)
     Log(label .. " fired: charaID=" .. tostring(charaID) .. ", playerID=" .. tostring(playerID)
         .. ", itemID=" .. tostring(id) .. ", itemNum=" .. tostring(num))
     if charaID and playerID and charaID == playerID then
-        ItemManager = sdk.to_managed_object(itemMgrPtr)
-        itemID = id
-        itemNum = num
-        itemEventType = ReadEventType(optionPtr)
-        itemSource = label
-        Log("player pickup captured via " .. label .. ": itemID=" .. tostring(itemID)
-            .. ", itemNum=" .. tostring(itemNum) .. ", eventType=" .. tostring(itemEventType))
+        if not id or not num or num <= 0 then
+            Log("ignored: invalid pickup ID or quantity (" .. label .. ")")
+            return
+        end
+        local pickup = {
+            manager = sdk.to_managed_object(itemMgrPtr),
+            player = player,
+            id = id,
+            num = num,
+            eventType = ReadEventType(optionPtr),
+            source = label,
+        }
+        Log("player pickup captured via " .. label .. ": itemID=" .. tostring(id)
+            .. ", itemNum=" .. tostring(num) .. ", eventType=" .. tostring(pickup.eventType))
+        if not Config.Enabled or (pickup.eventType ~= nil and (pickup.eventType & Config.ItemEvent) == 0) then
+            return
+        end
+        pickup.counts = SnapshotStorage(pickup.manager, player)
+        thread.get_hook_storage().carryItForMePickup = pickup
     else
-        -- clear so the post-hook never re-passes a previously captured item
         Log("ignored: pickup was not the player's (" .. label .. ")")
-        ClearPendingItem()
     end
 end
 
@@ -284,10 +367,11 @@ local function RegisterHook(signature, preHook)
         return
     end
     sdk.hook(method, function (args)
+        thread.get_hook_storage().carryItForMePickup = nil
         local ok, err = pcall(preHook, args)
         if not ok then
             Log("ERROR in pre-hook for " .. signature .. ": " .. tostring(err))
-            ClearPendingItem()
+            thread.get_hook_storage().carryItForMePickup = nil
         end
     end, PassItemToPawn)
     Log("hook registered: " .. signature)
