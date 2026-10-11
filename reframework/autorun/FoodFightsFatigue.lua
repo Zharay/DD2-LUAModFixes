@@ -9,32 +9,69 @@ local foodtable = {[1]=1,[2]=1,[4]=1,[5]=1,[7]=1,[8]=1,[10]=1,[11]=1,[13]=1,[14]
 -- 2. Dried Food
 -- 3. Roborant
 
-local itemManager = sdk.get_managed_singleton("app.ItemManager")
-local iter = itemManager._ItemDataDict:GetEnumerator()
+local useEffect = sdk.find_type_definition("app.ItemUseEffect")
+local healEffect = useEffect:get_field("Heal"):get_data(nil)
+local staminaEffect = useEffect:get_field("RecoverStamina"):get_data(nil)
 
-while iter:MoveNext() do
-	local item = iter:get_Current():get_Value()
-	if foodtable[item._Id] == 1 then -- BlackHpGain = base + itemHP * foodmult | WhiteHPGain = 0 | TotalHPGain = base + itemHP * foodmult
+local function apply_item(item, category)
+	if category == 1 then -- BlackHpGain = base + itemHP * foodmult | WhiteHPGain = 0 | TotalHPGain = base + itemHP * foodmult
 		item._HealBlackHp = config.base + item._HealWhiteHp * config.foodmult
 		item._HealWhiteHp = 0
-		item._UseEffect = 2
-	elseif foodtable[item._Id] == 2 then -- BlackHpGain = base + itemHP * driedmult | WhiteHPGain = (itemHP * (1-driedmult) - base) | TotalHPGain = itemHP (or at least: base)
+		item._UseEffect = staminaEffect
+	elseif category == 2 then -- BlackHpGain = base + itemHP * driedmult | WhiteHPGain = (itemHP * (1-driedmult) - base) | TotalHPGain = itemHP (or at least: base)
 		if item._HealWhiteHp > 0 then
 			item._HealBlackHp = config.base + item._HealWhiteHp * config.driedmult
 			item._HealWhiteHp = item._HealWhiteHp * (1 - config.driedmult) - config.base
 		else
 			item._HealBlackHp = config.base
 		end
-		item._UseEffect = 1
-	elseif foodtable[item._Id] == 3 then -- BlackHpGain = base + itemHP * roborantmult | WhiteHPGain = itemHP (or at least: base) | TotalHPGain = base + itemHP * (1 + roborantmult) (or at least: 2*base)
+		item._UseEffect = healEffect
+	elseif category == 3 then -- BlackHpGain = base + itemHP * roborantmult | WhiteHPGain = itemHP (or at least: base) | TotalHPGain = base + itemHP * (1 + roborantmult) (or at least: 2*base)
 		if item._HealWhiteHp > 0 then
 			item._HealBlackHp = config.base + item._HealWhiteHp * config.roborantmult
 		else
 			item._HealBlackHp = config.base
 			item._HealWhiteHp = config.base
 		end
-		item._UseEffect = 1
+		item._UseEffect = healEffect
 	end
+end
+
+local function apply_items()
+	local itemManager = sdk.get_managed_singleton("app.ItemManager")
+	if itemManager == nil or itemManager._ItemDataDict == nil
+		or itemManager._ItemDataDict:get_Count() == 0 then
+		return false
+	end
+
+	local count = 0
+	-- Avoid value-type enumerators: recent REFramework builds can return an invalid struct.
+	for id, category in pairs(foodtable) do
+		local item = itemManager:call("getItemData(System.Int32)", id)
+		if item == nil then
+			log.warn("[FoodFightsFatigue] Item ID " .. id .. " is missing from the item database.")
+		else
+			apply_item(item, category)
+			count = count + 1
+		end
+	end
+	log.info("[FoodFightsFatigue] Applied healing changes to " .. count .. " items.")
+	return true
+end
+
+local applied = apply_items()
+if not applied then
+	log.info("[FoodFightsFatigue] Waiting for the item database.")
+	re.on_application_entry("UpdateBehavior", function()
+		if applied then return end
+		local ok, result = pcall(apply_items)
+		if not ok then
+			applied = true
+			log.error("[FoodFightsFatigue] Initialization failed; retries stopped: " .. tostring(result))
+			return
+		end
+		applied = result
+	end)
 end
 
 -- Rysel
