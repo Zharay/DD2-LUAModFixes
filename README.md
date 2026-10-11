@@ -30,15 +30,6 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 - Fixed equipment not being passed to pawns
 - Now uses a proper round-robin distribution, spreading out the load until everyone else is full
 
-### [Better Better Item Desccription](https://www.nexusmods.com/dragonsdogma2/mods/338)
-This mod broke after Dark Arisen but I was already making changes to it. I was getting sick and tired of this thing spamming my logs and how it'd just break when debugging other things. So I fixed it for my needs.
-
-- Fixed it to work with Dark Arisn expansion
-- Now initializes correctly and not only when a player loads a save game
-- Logging is back to just being info logs instead of error logs (_NickCore for some reason defaults to error type logs)
-- Fixed naming/cache name misspelling
-- Cleaned up logging 
-
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
 
