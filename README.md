@@ -5,35 +5,43 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 
 ## Fixed Mods 
 
-### [Shut Up Pawns](https://www.nexusmods.com/dragonsdogma2/mods/248)
+### [Shut Up Pawns](https://www.nexusmods.com/dragonsdogma2/mods/248) by [emoose](https://www.nexusmods.com/dragonsdogma2/users/1439296)
 - Completely gutted the old ID system to use exact messages instead (IDs are no longer used in DD2)
 - Fixed errors involving PopStyleColor() and TreePop()
 - Fixed possible `nil` access values when it tries to obtain `app_MessageManager`
 - It will now try to reobtain the `app_MessageManager` if it is never loaded
 - Fixed presets always re-applying themselves when you had none selected
 
-### [Hide Helmets Out of Combat](https://www.nexusmods.com/dragonsdogma2/mods/961)
+### [Hide Helmets Out of Combat](https://www.nexusmods.com/dragonsdogma2/mods/961) by [CriticalError](https://www.nexusmods.com/dragonsdogma2/users/76665613)
 - Now checks if we are in combat every 15 frames instead of every frame, reducing performance impact.
 - Fixed equipment errors and updated to latest REFramework method calls
 
-### [Mark Important NPCs](https://www.nexusmods.com/dragonsdogma2/mods/433)
+### [Mark Important NPCs](https://www.nexusmods.com/dragonsdogma2/mods/433) by [mishapsi](https://www.nexusmods.com/dragonsdogma2/users/14594374)
 - Fixed ImgGUI call errors
 - Added new option to show an exclaimation (!) to mark important NPCs
 - Added new config variables to customize its color and size
 - Added new config variable to set how often the mod searches for important NPCs to reduce performance impact
 - Added options to (properly) disable itself during cutscenes and while in menus
 
-### [Carry It For Me](https://www.nexusmods.com/dragonsdogma2/mods/284)
+### [Carry It For Me](https://www.nexusmods.com/dragonsdogma2/mods/284) by [lingsamuel](https://www.nexusmods.com/dragonsdogma2/users/21480414)
+- Updated to support Dark Arisen
+- Now uses a snapshot of the player's inventory to then check what item gets added. Should the other methods to get items fail, it will fall back to this.
 - Fixed GetItem calls to use the updated signatures
 - GetItemOption.EventType is now being used instead
 - Fixed a bug pertaining to event items never being filtered correctly
 - Fixed equipment not being passed to pawns
 - Now uses a proper round-robin distribution, spreading out the load until everyone else is full
 
+### [Food Fights Fatigue](https://www.nexusmods.com/dragonsdogma2/mods/266) by [RyselZ](https://www.nexusmods.com/dragonsdogma2/users/7479387)
+- Now uses `app.ItemUseEffect` and explicit `getItemData` instead of relying solely on `ItemManager`
+- It will retry should the database not be ready yet
+- Should apply these effects immediately on start or when settings change as it used to
+- Added options in REFramework menu. Values *should* update in real-time but mods that show the values may not update immediately
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
 
-### [Clock](https://www.nexusmods.com/dragonsdogma2/mods/150)
+### [Clock](https://www.nexusmods.com/dragonsdogma2/mods/150) by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318)
 This mod is technically working but by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
 
 - Optimized the heck out of it.
