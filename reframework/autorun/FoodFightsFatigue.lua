@@ -12,8 +12,20 @@ local foodtable = {[1]=1,[2]=1,[4]=1,[5]=1,[7]=1,[8]=1,[10]=1,[11]=1,[13]=1,[14]
 local useEffect = sdk.find_type_definition("app.ItemUseEffect")
 local healEffect = useEffect:get_field("Heal"):get_data(nil)
 local staminaEffect = useEffect:get_field("RecoverStamina"):get_data(nil)
+local originals = {}
 
 local function apply_item(item, category)
+	local original = originals[item._Id]
+	if original == nil then
+		original = {
+			item = item,
+			whiteHp = item._HealWhiteHp,
+			blackHp = item._HealBlackHp,
+			useEffect = item._UseEffect,
+		}
+		originals[item._Id] = original
+	end
+	item._HealWhiteHp = original.whiteHp
 	if category == 1 then -- BlackHpGain = base + itemHP * foodmult | WhiteHPGain = 0 | TotalHPGain = base + itemHP * foodmult
 		item._HealBlackHp = config.base + item._HealWhiteHp * config.foodmult
 		item._HealWhiteHp = 0
@@ -62,16 +74,63 @@ end
 local applied = apply_items()
 if not applied then
 	log.info("[FoodFightsFatigue] Waiting for the item database.")
-	re.on_application_entry("UpdateBehavior", function()
-		if applied then return end
-		local ok, result = pcall(apply_items)
-		if not ok then
-			applied = true
-			log.error("[FoodFightsFatigue] Initialization failed; retries stopped: " .. tostring(result))
-			return
-		end
-		applied = result
-	end)
 end
+
+re.on_application_entry("UpdateBehavior", function()
+	if applied then return end
+	local ok, result = pcall(apply_items)
+	if not ok then
+		applied = true
+		log.error("[FoodFightsFatigue] Applying settings failed; retries stopped: " .. tostring(result))
+		return
+	end
+	applied = result
+end)
+
+local function save_config()
+	local ok, result = pcall(json.dump_file, "FoodFightsFatigue_config.json", config)
+	if not ok or result == false then
+		log.error("[FoodFightsFatigue] Could not save settings: " .. tostring(result))
+	end
+end
+
+re.on_config_save(save_config)
+re.on_draw_ui(function()
+	if not imgui.tree_node("Food Fights Fatigue") then return end
+	local settingsChanged = imgui.button("Reset to defaults")
+	if settingsChanged then
+		config.base = 20
+		config.foodmult = 0.1
+		config.driedmult = 0.2
+		config.roborantmult = 0.05
+	end
+	imgui.text("Changes apply live and save automatically.")
+	local changed, value = imgui.slider_int("Base recovery", config.base, 0, 100)
+	settingsChanged = settingsChanged or changed
+	if changed then config.base = value end
+	changed, value = imgui.slider_float("Food multiplier", config.foodmult, 0.00, 2.00, "%.2f")
+	if changed then config.foodmult = value end
+	settingsChanged = settingsChanged or changed
+	changed, value = imgui.slider_float("Dried food multiplier", config.driedmult, 0.00, 2.00, "%.2f")
+	if changed then config.driedmult = value end
+	settingsChanged = settingsChanged or changed
+	changed, value = imgui.slider_float("Roborant multiplier", config.roborantmult, 0.00, 2.00, "%.2f")
+	if changed then config.roborantmult = value end
+	settingsChanged = settingsChanged or changed
+	imgui.tree_pop()
+	if settingsChanged then
+		applied = false
+		save_config()
+	end
+end)
+
+-- Restore the baseline before scripts reload so it is not captured from modified data.
+re.on_script_reset(function()
+	for _, original in pairs(originals) do
+		original.item._HealWhiteHp = original.whiteHp
+		original.item._HealBlackHp = original.blackHp
+		original.item._UseEffect = original.useEffect
+	end
+end)
 
 -- Rysel
