@@ -1,6 +1,10 @@
 ﻿local modname="Clock"
 local configfile=modname..".json"
+
+log.set_level("info")
 log.info("["..modname.."]".."Start")
+log.set_level("error")
+
 --settings
 local _config={
     {name="Style",type="mutualbox"},

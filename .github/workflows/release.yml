@@ -57,7 +57,6 @@ jobs:
             zip -X "dist/$name.zip" "$@" modinfo.ini DD2.jpg
           }
 
-
           # ---- Add / edit entries below ----
           make_zip Clock \
             reframework/autorun/Clock.lua
@@ -70,12 +69,6 @@ jobs:
 
           make_zip ShutUpPawns \
             reframework/autorun/ShutUpPawns.lua
-
-          make_zip SkillDescription \
-            reframework/autorun/SkillDescription.lua \
-            reframework/data/SkillDescription.English.json \
-            reframework/data/SkillDescription.Para.json \
-            reframework/data/SkillDescription.SimplelifiedChinese.json
 
           make_zip carry_it_for_me \
             reframework/autorun/carry_it_for_me.lua

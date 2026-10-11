@@ -1,6 +1,6 @@
 -- DragonsDogma2 ShutUpPawns! script by emoose
 -- https://www.nexusmods.com/dragonsdogma2/mods/248
-
+local debug = false
 local DefaultConfig = {
     KeepMinimapMarkers = true, -- if set to false, will also stop the ! markers from appearing on minimap
     AutoSaveChanges = false, -- if true, blocklist changes will automatically be saved to config without needing to press "Save Config"
@@ -80,7 +80,11 @@ local app_MessageManager = sdk.get_managed_singleton("app.MessageManager")
 
 local LOG_PREFIX = "[ShutUpPawns] "
 local function logDebug(message)
-    log.info(LOG_PREFIX .. message)
+    if debug then
+        log.set_level("info")
+        log.info(LOG_PREFIX .. message)
+        log.set_level("error")
+    end
 end
 local function logError(message)
     log.error(LOG_PREFIX .. message)

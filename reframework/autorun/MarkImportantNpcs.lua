@@ -1,6 +1,9 @@
 local modname = "MarkImportantNpcs"
 local configfile = modname .. ".json"
+
+log.set_level("info")
 log.info("[" .. modname .. "]" .. " Start")
+log.set_level("error")
 
 local _config = {
 	{name = "disable_in_cutscene", type = "bool", default=true},

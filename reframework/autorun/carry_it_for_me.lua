@@ -12,6 +12,7 @@ local debug = false
 if debug then
     log.set_level("info")
     log.info("[Carry It For Me] Loaded")
+    log.set_level("error")
 end
 
 local Config = json.load_file('carry_it_for_me.json') or {}
@@ -78,7 +79,9 @@ local MaxPartyPawns = 3 -- player + up to 3 pawns is the max party size
 
 local function Log(msg)
     if debug then
+        log.set_level("info")
         log.info("[Carry It For Me] " .. msg)
+        log.set_level("error")
     end
 end
 
