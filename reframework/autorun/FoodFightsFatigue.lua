@@ -105,6 +105,7 @@ re.on_draw_ui(function()
 		config.roborantmult = 0.05
 	end
 	imgui.text("Changes apply live and save automatically.")
+	imgui.text("Note: Descriptions may not update immediately after changes.")
 	local changed, value = imgui.slider_int("Base recovery", config.base, 0, 100)
 	settingsChanged = settingsChanged or changed
 	if changed then config.base = value end
