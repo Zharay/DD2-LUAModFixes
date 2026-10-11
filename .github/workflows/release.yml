@@ -73,6 +73,10 @@ jobs:
           make_zip carry_it_for_me \
             reframework/autorun/carry_it_for_me.lua
 
+          make_zip FoodFightsFatigue \
+            reframework/autorun/FoodFightsFatigue.lua \
+            reframework/data/FoodFightsFatigue_config.json
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
