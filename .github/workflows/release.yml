@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "reframework/**"
+      - "modinfo.ini"
+      - "DD2.jpg"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +25,27 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
+          for f in modinfo.ini DD2.jpg; do
+            [[ -f "$f" ]] || { echo "::error::Missing shared file: $f"; exit 1; }
+          done
+
+          # Keep a pristine copy of modinfo.ini; the one in the repo root gets
+          # rewritten for every zip so each archive ships its own metadata.
+          cp modinfo.ini modinfo.template.ini
+
+          # Usage: write_modinfo <ZipName>
+          # Rewrites the name and version lines and leaves every other line of
+          # the template untouched.
+          write_modinfo() {
+            local display="Fixed Lua Scripts - $1"
+            local version="1.${GITHUB_RUN_NUMBER}"
+            awk -v n="$display" -v v="$version" '
+              /^name=/ { print "name=" n; next }
+              /^version=/ { print "version=" v; next }
+              { print }
+            ' modinfo.template.ini > modinfo.ini
+          }
+
           # Usage: make_zip <ZipName> <file> [file ...]
           # Paths are relative to the repo root so the zip keeps the "reframework/..." structure.
           make_zip() {
@@ -30,8 +53,10 @@ jobs:
             for f in "$@"; do
               [[ -f "$f" ]] || { echo "::error::Missing file for $name.zip: $f"; exit 1; }
             done
-            zip -X "dist/$name.zip" "$@"
+            write_modinfo "$name"
+            zip -X "dist/$name.zip" "$@" modinfo.ini DD2.jpg
           }
+
 
           # ---- Add / edit entries below ----
 
@@ -66,7 +91,11 @@ jobs:
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
-          zip -X -r dist/All-In-One.zip reframework
+          write_modinfo All-In-One
+          zip -X -r dist/All-In-One.zip reframework modinfo.ini DD2.jpg
+
+          # Restore the committed modinfo.ini so the workspace is left untouched.
+          mv modinfo.template.ini modinfo.ini
 
           ls -l dist
 
