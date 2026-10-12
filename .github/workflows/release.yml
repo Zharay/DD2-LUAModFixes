@@ -80,6 +80,10 @@ jobs:
           make_zip EkiToolsBox \
             reframework/autorun/EkiToolsBox.lua
 
+          make_zip HigherDropRateOrNumber \
+            reframework/autorun/HigherDropRateOrNumber.lua \
+            reframework/data/HigherDropRateOrNumber.json
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
