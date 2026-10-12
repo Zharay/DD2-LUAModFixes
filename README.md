@@ -38,6 +38,14 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 - Should apply these effects immediately on start or when settings change as it used to
 - Added options in REFramework menu. Values *should* update in real-time but mods that show the values may not update immediately
 
+### [EkiToolsBox](https://www.nexusmods.com/dragonsdogma2/mods/411) by [Ekibunnel](https://www.nexusmods.com/dragonsdogma2/users/4522098)
+- Added unique IMGUI IDs to fix conflicts
+- Fixed outdated references
+- Fixed fur toggle that was also changing dragon forged opacity
+- Fixed sliders incorrectly applying unless you are hovering over it
+- Fix for having gaps in pawn party
+- Fixed several possible cases nil-access bugs
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
 
