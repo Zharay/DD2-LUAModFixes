@@ -77,6 +77,9 @@ jobs:
             reframework/autorun/FoodFightsFatigue.lua \
             reframework/data/FoodFightsFatigue_config.json
 
+          make_zip EkiToolsBox \
+            reframework/autorun/EkiToolsBox.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
