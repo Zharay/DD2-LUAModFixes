@@ -1,13 +1,13 @@
 local Mod = {
 	Info = {
 		Name = "EkiToolsBox",
-		Version = "0.5.7",
-		Contributors = "Ekibunnel",
-		Source = "https://github.com/Ekibunnel/DD2-EkiToolsBox"
+		Version = "0.5.8",
+		Contributors = "Ekibunnel & Jarol/Zharay",
+		Source = "https://github.com/Zharay/DD2-LUAModFixes"
 	},
 	Cfg = {
 		Debug = false,
-		DrawWindow = nil,
+		DrawWindow = true,
 		IgnoreReframeworkDrawUI = false,
 		IgnoreCleanup = false,
 		InfStamina = 1,
@@ -22,7 +22,7 @@ local Mod = {
 		DefaultConsumeOilSecSpeed = 0.0125,
 		DefaultDragonGradeOpacity = 0.650
 	},
-	Variable = {},
+	Variable = { IsSpaMode = false, CloneToDoTable = {} },
 	Presets = {}
 }
 
@@ -66,6 +66,10 @@ end
 local function ClearLogFile()
 	if Mod.Cfg.Debug then
 		local Logfile = io.open(Mod.Info.Name.."\\"..Mod.Info.Name..".log", "w")
+		if Logfile == nil then
+			log.error("["..Mod.Info.Name.."] Could not open debug log for writing")
+			return
+		end
 		Logfile:write("--- "..Mod.Info.Name.." v"..Mod.Info.Version.." Debug:"..tostring(Mod.Cfg.Debug).." ("..os.date("%x-%X")..") ---\n")
 		Logfile:close()
 	end
@@ -83,6 +87,10 @@ local function DebugLog(String, UseGlobalTime)
 		local DebugString = "["..Mod.Info.Name.."]["..string.format("%09.3f", LogTime).."] "..tostring(String)
 		log.debug(DebugString)
 		local Logfile = io.open(Mod.Info.Name.."\\"..Mod.Info.Name..".log", "a")
+		if Logfile == nil then
+			log.error("["..Mod.Info.Name.."] Could not open debug log for appending")
+			return
+		end
 		Logfile:write(DebugString.."\n")
 		Logfile:close()
 	end
@@ -156,10 +164,8 @@ local function GetChildsFromTransform(Transform, ChildGameObjectName, ChildFolde
 	if ChildFolderSelfName ~= nil then
 		if type(ChildFolderSelfName) == "table" then
 			for index, value in ipairs(ChildFolderSelfName) do
-				ChildFolderSelfName[index] = nil
-				ChildFolderSelfName[value] = index
+				ChildFolderSelfNameTable[value] = index
 			end
-			ChildFolderSelfNameTable = ChildFolderSelfName
 		else
 			ChildFolderSelfNameTable[ChildFolderSelfName] = 1
 		end
@@ -190,7 +196,7 @@ local function GetChildsFromTransform(Transform, ChildGameObjectName, ChildFolde
         child = child:call("get_Next")
     end
 	if ChildGameObjectName == nil then
-		return children[1] and children
+		return children
 	end
     return nil
 end
@@ -442,7 +448,12 @@ local function SaveCurrentPreset(NameOrIndex)
 end
 
 local function UpdateAppSingleton(Name)
-	local AppSingleton = sdk.get_managed_singleton('app.AppSingleton`1<app.'..Name..'>'):call('get_Instance')
+	local Singleton = sdk.get_managed_singleton('app.AppSingleton`1<app.'..Name..'>')
+	if Singleton == nil then
+		DebugLog("UpdateAppSingleton "..Name.." singleton is not ready !")
+		return false
+	end
+	local AppSingleton = Singleton:call('get_Instance')
 	if AppSingleton ~= nil then
 		ManagedSingleton[Name] = AppSingleton
 		DebugLog("UpdateAppSingleton "..Name.." : "..tostring(AppSingleton).." @"..tostring(AppSingleton:get_address()))
@@ -719,7 +730,7 @@ local function UpdateMaterialDragonGradeOpacity(NameOrIndex, Value)
 		DebugLog("UpdateMaterialDragonGradeOpacity Characters["..ModCharaId[NewIndex].."] is nil, aborting ! ")
 		return false
 	end
-	if Characters[NewIndex].WeaponMesh == nil and Characters[NewIndex].PartSwapMesh == nil then
+	if Characters[NewIndex].WeaponMesh == nil or Characters[NewIndex].PartSwapMesh == nil then
 		DebugLog("UpdateMaterialDragonGradeOpacity Mesh are nil, aborting !")
 		return false
 	end
@@ -897,9 +908,14 @@ local function PopulateCharacters(NameOrIndex)
 		local PawnDataContext = nil
 		if Characters[NewIndex].PawnID ~= nil  then
 			PawnDataContext = Characters[NewIndex].PartSwapper._PawnDataContext
-			Characters[NewIndex].Meta._Name = PawnDataContext._Name
-			Characters[NewIndex].Meta._Nickname = PawnDataContext._Nickname
-			Characters[NewIndex].Meta.NameAndNickString = " - "..PawnDataContext._Name.." "..PawnDataContext._Nickname
+			if PawnDataContext ~= nil then
+				Characters[NewIndex].Meta._Name = PawnDataContext._Name
+				Characters[NewIndex].Meta._Nickname = PawnDataContext._Nickname
+				Characters[NewIndex].Meta.NameAndNickString = " - "..tostring(PawnDataContext._Name).." "..tostring(PawnDataContext._Nickname)
+			else
+				DebugLog("PopulateCharacters pawn data context is not ready for "..Characters[NewIndex].Name)
+				return false
+			end
 		end
 	end
 
@@ -907,13 +923,18 @@ local function PopulateCharacters(NameOrIndex)
 end
 
 local function UpdateLantern(CharacterName)
+	if Mod.Presets[CharacterName] == nil then
+		DebugLog("UpdateLantern preset is not ready for "..CharacterName)
+		return false
+	end
 	local LanternMesh = Characters[ModCharaId[CharacterName]].LanternMesh
-	if LanternMesh == nil then
-		DebugLog("UpdateLantern LanternMesh is nil for Characters[ModCharaId["..CharacterName.."]] !")
+	local LanternController = Characters[ModCharaId[CharacterName]].LanternController
+	if LanternMesh == nil or LanternController == nil then
+		DebugLog("UpdateLantern lantern mesh or controller is nil for Characters[ModCharaId["..CharacterName.."]] !")
 		return false
 	end
 	local ShouldDrawLantern = true
-	if Mod.Presets[CharacterName].HideLantern == true or not Characters[ModCharaId[CharacterName]].LanternController:hasLantern() then ShouldDrawLantern = false end
+	if Mod.Presets[CharacterName].HideLantern == true or not LanternController:hasLantern() then ShouldDrawLantern = false end
 	LanternMesh:set_DrawDefault(ShouldDrawLantern)
 	DebugLog("UpdateLantern called for Characters[ModCharaId["..CharacterName.."]] !")
 	return true
@@ -951,6 +972,7 @@ local function ForceUpdate(CharacterName, CustomTargetPartSwapper)
 			TargetPartSwapper:call("forceUpdateStatusOfSwapObjects")
 		end)
 		if not status then
+			log.error("["..Mod.Info.Name.."] ForceUpdate failed: "..tostring(Error))
 			DebugLog("ForceUpdate failled, PartSwapper : "..tostring(TargetPartSwapper).."@"..tostring(TargetPartSwapper:get_address()).." status :"..tostring(status).." | error : "..type(Error).." : "..tostring(Error))
 			return false
 		end
@@ -981,7 +1003,7 @@ local function UpdateHideSwapObjects(CharacterName)
 	local UpdatedHideSwapObjects = nil
 	if Mod.Presets[CharacterName].SwapObjectsToHide ~= nil then
 		for k, v in pairs(Mod.Presets[CharacterName].SwapObjectsToHide) do
-			if v ~= nil then
+			if v ~= nil and v ~= false then
 				local EnumSwapObjectsValue = nil
 				for kk, vv in pairs(ExtractedEnums.SwapObjects) do
 					-- DebugLog("EnumSwapObjects vv[1] : "..vv[1].." | EnumSwapObjects vv[2] : "..tostring(vv[2]))
@@ -1099,7 +1121,7 @@ local function SetupPawns()
 
 		local PawnID = value:get_PawnID()
 		if PawnID == nil or PawnID < 0 then
-			DebugLog("SetupPawns Pawn PawnID : "..PawnID..", skiping !")
+			DebugLog("SetupPawns Pawn PawnID : "..tostring(PawnID)..", aborting !")
 			break
 		end
 		local PawnIDName = "UnkPawn"
@@ -1207,13 +1229,12 @@ local function SetupLantern()
 	ApplyAllInfLanternOil()
 end
 
-local function ApplyClone(Name, CloneBuilder)
-	if Name == nil or CloneBuilder == nil then
+local function ApplyClone(Name, CloneBuilder, CloneGameObj)
+	if Name == nil or CloneBuilder == nil or CloneGameObj == nil or Mod.Presets[Name] == nil then
 		DebugLog("ApplyClone missing param, aborting !")
 		return false
 	end
 
-	local CloneGameObj = CloneBuilder:get_GameObject()
 	-- DebugLog("ApplyClone CloneBuilder : "..tostring(CloneBuilder).."@"..tostring(CloneBuilder:get_address()).." !")
 	if Mod.Presets[Name].Fur_MaskMap_Hand ~= nil and Mod.Presets[Name].Fur_MaskMap_Hand >= 0 then
 		if UpdateMaterialFloat(CloneGameObj:call("getComponent(System.Type)", sdk.typeof("via.render.Mesh")), "body_mat", "Fur_MaskMap_Hand", Mod.Presets[Name].Fur_MaskMap_Hand) then
@@ -1280,7 +1301,7 @@ re.on_script_reset(function()
 
 	DebugLog("--- on_script_reset called doing cleanup!")
 
-	for index, value in ipairs(Characters) do
+	for index, value in pairs(Characters) do
 		InitPreset(value.Name)
 		UpdateLantern(value.Name)
 
@@ -1325,10 +1346,11 @@ sdk.hook(
 )
 
 sdk.hook(
-    sdk.find_type_definition("app.CaughtController"):get_method("setupEscape"),
+    sdk.find_type_definition("app.CaughtController"):get_method("setupEscape(System.Single, System.Single, System.Single, System.Single)"),
     function(args)
 		if Mod.Cfg.InfCarryTime > 1 then
-			if sdk.to_managed_object(args[2]):get_field("CatchChara"):get_CharaIDString() == "ch000000_00" then
+			local CatchChara = sdk.to_managed_object(args[2]):get_field("CatchChara")
+			if CatchChara ~= nil and CatchChara:get_CharaIDString() == "ch000000_00" then
 				if Mod.Cfg.InfCarryTime == 2 then
 					args[3]= sdk.float_to_ptr(-1)
 					DebugLog("hook app.CaughtController setupEscape spoofed !")
@@ -1341,7 +1363,7 @@ sdk.hook(
 		end
     end,
     function(retval)
-		return sdk.to_ptr(0)
+		return retval
 	end
 )
 
@@ -1361,7 +1383,7 @@ sdk.hook(
 			elseif Mod.Cfg.InfStamina == 2 then
 				if sdk.to_float(retval) < 0.0 then
 					if ManagedSingleton.BattleManager == nil then UpdateAppSingleton("BattleManager") end
-					if ManagedSingleton.BattleManager:get_field("_BattleMode") == 0 then
+					if ManagedSingleton.BattleManager ~= nil and ManagedSingleton.BattleManager:get_field("_BattleMode") == 0 then
 						return sdk.float_to_ptr(0.0)
 					end
 				end
@@ -1376,7 +1398,7 @@ sdk.hook(
 	function(args) end,
 	function(retval)
 		if Mod.Cfg.InfStamina == 4 then
-			return sdk.to_ptr(0)
+			return sdk.float_to_ptr(0.0)
 		end
 		return retval
 	end
@@ -1395,7 +1417,7 @@ sdk.hook(
 	sdk.find_type_definition("app.PartSwapper"):get_method("set_HideSwapObjects"),
 	function(args)
 		local CurrentPartSwapper = sdk.to_managed_object(args[2])
-		for index, value in ipairs(Characters) do
+		for index, value in pairs(Characters) do
 			if value.PartSwapper == CurrentPartSwapper then
 				local CalledHideSwapObjects = (sdk.to_int64(args[3]) & 0xFFFF)
 
@@ -1443,12 +1465,13 @@ sdk.hook(
 		if sdk.to_int64(args[3]) ~= 0 then
 			local Human = sdk.to_managed_object(args[2])
 			DebugLog("app.Human Chara_LeftWeaponChangedHandler Human name : "..Human:get_GameObject():get_Name())
-			for index, value in ipairs(Characters) do
+			for index, value in pairs(Characters) do
 				if value.Human == Human then
+					local Preset = Mod.Presets[value.Name]
 					AddOnTickCounter("WeaponChangedHandler"..tostring(index),
 					0.0,
 					{ [1] = UpdateMesh, [2] = UpdateMaterialDragonGradeOpacity },
-					{ [1] = index, [2] = { index, Mod.Presets[value.Name].DragonGrade_Opacity } }
+					{ [1] = index, [2] = { index, Preset and Preset.DragonGrade_Opacity } }
 					)
 					break
 				end
@@ -1464,12 +1487,13 @@ sdk.hook(
 		if sdk.to_int64(args[3]) ~= 0 then
 			local Human = sdk.to_managed_object(args[2])
 			-- DebugLog("app.Human Chara_RightWeaponChangedHandler Human name : "..Human:get_GameObject():get_Name())
-			for index, value in ipairs(Characters) do
+			for index, value in pairs(Characters) do
 				if value.Human == Human then
+					local Preset = Mod.Presets[value.Name]
 					AddOnTickCounter("WeaponChangedHandler"..tostring(index),
 					0.0,
 					{ [1] = UpdateMesh, [2] = UpdateMaterialDragonGradeOpacity },
-					{ [1] = index, [2] = { index, Mod.Presets[value.Name].DragonGrade_Opacity } }
+					{ [1] = index, [2] = { index, Preset and Preset.DragonGrade_Opacity } }
 					)
 					break
 				end
@@ -1482,8 +1506,10 @@ sdk.hook(
 sdk.hook(
 	sdk.find_type_definition("app.CharacterEditManager"):get_method("registerSwapRequest"),
 	function(args)
-		local CurrentPartSwapperRootCharacter = sdk.to_managed_object(args[3]):get_Character()
-		for index, value in ipairs(Characters) do
+		local PartSwapperRoot = sdk.to_managed_object(args[3])
+		if PartSwapperRoot == nil then return end
+		local CurrentPartSwapperRootCharacter = PartSwapperRoot:get_Character()
+		for index, value in pairs(Characters) do
 			if value.Character == CurrentPartSwapperRootCharacter then
 				local DragonGrade_Opacity = nil
 				if Mod.Presets[value.Name] ~= nil then
@@ -1500,7 +1526,7 @@ sdk.hook(
 		end
 		--DebugLog("CharacterEditManager registerSwapRequest is not from party !")
 	end,
-	function(retval) return sdk.to_ptr(0) end
+	function(retval) return retval end
 )
 
 sdk.hook(
@@ -1529,11 +1555,12 @@ sdk.hook(
 
 
 sdk.hook(
-	sdk.find_type_definition("app.CloneBuilder"):get_method("requestBuild(app.CharacterID, System.Byte, System.Byte, System.Boolean, System.Action`1<via.GameObject>, System.Byte, app.charaedit.ch000.Define.BuildOption)"),
+	sdk.find_type_definition("app.CloneBuilder"):get_method("requestBuild(app.CharacterID, System.Byte, System.Byte, System.Boolean, app.CharacterEditManager.BuildCompletedHandler, System.Byte, app.charaedit.ch000.Define.BuildOption)"),
 	function(args)
         local callCloneBuilder = sdk.to_managed_object(args[2])
 		local callCharacterID = sdk.to_int64(args[3])
-		for index, value in ipairs(Characters) do
+		Mod.Variable.CloneToDoTable[callCloneBuilder:GetHashCode()] = nil
+		for index, value in pairs(Characters) do
 			if value.CharacterID[callCharacterID] ~= nil then
 				Mod.Variable.CloneToDoTable[callCloneBuilder:GetHashCode()] = value.Name
 				break
@@ -1546,17 +1573,27 @@ sdk.hook(
 )
 
 sdk.hook(
-	sdk.find_type_definition("app.CloneBuilder"):get_method("onCompletedBuild(via.GameObject)"),
+	sdk.find_type_definition("app.CloneBuilder"):get_method("onCompletedBuild(via.GameObject, app.CharacterEditManager.DummyArg_BuildCompleted)"),
 	function(args)
         local callCloneBuilder = sdk.to_managed_object(args[2])
 		local callCloneBuilderHash = callCloneBuilder:GetHashCode()
 		local CloneToDoHashValue = Mod.Variable.CloneToDoTable[callCloneBuilderHash]
+		local Storage = thread.get_hook_storage()
+		Storage.EkiToolsBoxClone = nil
 		if CloneToDoHashValue ~= nil then
-			ApplyClone(CloneToDoHashValue, callCloneBuilder)
+			Storage.EkiToolsBoxClone = { Name = CloneToDoHashValue, Builder = callCloneBuilder, GameObject = sdk.to_managed_object(args[3]) }
 			Mod.Variable.CloneToDoTable[callCloneBuilderHash] = nil
 		end
 	end,
-	function(retval) return retval end
+	function(retval)
+		local Storage = thread.get_hook_storage()
+		local Clone = Storage.EkiToolsBoxClone
+		Storage.EkiToolsBoxClone = nil
+		if Clone ~= nil then
+			ApplyClone(Clone.Name, Clone.Builder, Clone.GameObject)
+		end
+		return retval
+	end
 )
 
 ----- GUI
@@ -1592,10 +1629,15 @@ re.on_draw_ui(function()
 end)
 
 re.on_frame(function()
-	if Mod.Cfg.DrawWindow == nil then Mod.Cfg.DrawWindow = true end
 	if Mod.Cfg.DrawWindow and (reframework:is_drawing_ui() or Mod.Cfg.IgnoreReframeworkDrawUI) then
 		Mod.Cfg.DrawWindow = imgui.begin_window(Mod.Info.Name, true)
-		if Mod.Cfg.DrawWindow == false then SaveCfg() end
+		if Mod.Cfg.DrawWindow == false then
+			imgui.end_window()
+			SaveCfg()
+			return
+		end
+		CfgChanged = {}
+		PresetChanged = {}
 		imgui.push_item_width(-1.0)
 		imgui.set_next_item_open(HeaderState["Gameplay"])
 		HeaderState["Gameplay"] = imgui.collapsing_header("Gameplay")
@@ -1629,10 +1671,12 @@ re.on_frame(function()
 			HeaderState["Characters"] = imgui.collapsing_header("Characters")
 			if HeaderState["Characters"] then
 				imgui.indent()
-				for index, Character in ipairs(Characters) do
-					if Mod.Presets[Character.Name] ~= nil then
+				for index = 1, #ModCharaId do
+					local Character = Characters[index]
+					if Character ~= nil and Mod.Presets[Character.Name] ~= nil then
+						imgui.push_id(Character.Name)
 						imgui.set_next_item_open(HeaderState["Characters"..Character.Name])
-						HeaderState["Characters"..Character.Name] = imgui.collapsing_header(Character.Name..Character.Meta.NameAndNickString)
+						HeaderState["Characters"..Character.Name] = imgui.collapsing_header(Character.Name..Character.Meta.NameAndNickString.."###Character")
 						if HeaderState["Characters"..Character.Name] then
 							imgui.indent()
 							imgui.text("Hide Lantern : ")
@@ -1648,22 +1692,21 @@ re.on_frame(function()
 									imgui.same_line()
 									PresetChanged["Fur_MaskMap_Hand"..Character.Name], IgnoredValues["Fur_MaskMap_Hand_ToggleValue"..Character.Name] = imgui.checkbox("<-- Click here to Enable##Fur_MaskMap_Hand_Toggle"..Character.Name, false)
 									if PresetChanged["Fur_MaskMap_Hand"..Character.Name] == true then
-										Mod.Presets[Character.Name].DragonGrade_Opacity = Mod.Constant.DefaultFurMaskMapHand
+										Mod.Presets[Character.Name].Fur_MaskMap_Hand = Mod.Constant.DefaultFurMaskMapHand
 									end
 								else
 									imgui.text("(On) : ")
 									imgui.same_line()
 									PresetChanged["Fur_MaskMap_Hand"..Character.Name], IgnoredValues["Fur_MaskMap_Hand"..Character.Name] = imgui.drag_float("##Fur_MaskMap_Hand"..Character.Name, Mod.Presets[Character.Name].Fur_MaskMap_Hand, 0.01, 0.0, 1.0)
+									if PresetChanged["Fur_MaskMap_Hand"..Character.Name] == true then
+										Mod.Presets[Character.Name].Fur_MaskMap_Hand = IgnoredValues["Fur_MaskMap_Hand"..Character.Name]
+									end
 									if imgui.is_item_hovered() then
 										if imgui.is_mouse_clicked(1) then
 											Mod.Presets[Character.Name].Fur_MaskMap_Hand = -1
 											PresetChanged["Fur_MaskMap_Hand"..Character.Name] = true
-										elseif PresetChanged["Fur_MaskMap_Hand"..Character.Name] == true then
-											Mod.Presets[Character.Name].Fur_MaskMap_Hand = IgnoredValues["Fur_MaskMap_Hand"..Character.Name]
 										end
-										imgui.begin_tooltip()
 										imgui.set_tooltip("0.0 : is the default value and will make body part invisible\n0.05 : will show the body but hide the fur\n1.0 : Will show the body and the full fur no matter what, it create clipping issue between armor and fur\n\nRight-Click to turn off the overwrite")
-										imgui.end_tooltip()
 									end
 								end
 								imgui.text("DragonGrade Opacity")
@@ -1679,16 +1722,15 @@ re.on_frame(function()
 									imgui.text("(On) : ")
 									imgui.same_line()
 									PresetChanged["DragonGrade_Opacity"..Character.Name], IgnoredValues["DragonGrade_Opacity"..Character.Name] = imgui.drag_float("##DragonGrade_Opacity"..Character.Name, Mod.Presets[Character.Name].DragonGrade_Opacity, 0.01, 0.0, 1.0)
+									if PresetChanged["DragonGrade_Opacity"..Character.Name] == true then
+										Mod.Presets[Character.Name].DragonGrade_Opacity = IgnoredValues["DragonGrade_Opacity"..Character.Name]
+									end
 									if imgui.is_item_hovered() then
 										if imgui.is_mouse_clicked(1) then
 											Mod.Presets[Character.Name].DragonGrade_Opacity = -1
 											PresetChanged["DragonGrade_Opacity"..Character.Name] = true
-										elseif PresetChanged["DragonGrade_Opacity"..Character.Name] == true then
-											Mod.Presets[Character.Name].DragonGrade_Opacity = IgnoredValues["DragonGrade_Opacity"..Character.Name]
 										end
-										imgui.begin_tooltip()
 										imgui.set_tooltip("0.0 : disable the effect\n\nRight-Click to turn off the overwrite")
-										imgui.end_tooltip()
 									end
 								end
 							end
@@ -1705,7 +1747,7 @@ re.on_frame(function()
 												imgui.table_next_row()
 											end
 											imgui.table_set_column_index(i)
-											PresetChanged["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]], IgnoredValues["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]] = imgui.checkbox(v[1].."##CharactersSwapObjectsToHideTable_"..Character.Name.."_"..v[1], Mod.Presets[Character.Name].SwapObjectsToHide[v[1]])
+											PresetChanged["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]], IgnoredValues["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]] = imgui.checkbox(v[1].."##CharactersSwapObjectsToHideTable_"..Character.Name.."_"..v[1], Mod.Presets[Character.Name].SwapObjectsToHide[v[1]] ~= nil and Mod.Presets[Character.Name].SwapObjectsToHide[v[1]] ~= false)
 											if PresetChanged["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]] == true then
 												if IgnoredValues["CharactersSwapObjectsToHideTable"..Character.Name.."_"..v[1]] then
 													Mod.Presets[Character.Name].SwapObjectsToHide[v[1]] = "Hiden"
@@ -1721,6 +1763,7 @@ re.on_frame(function()
 							end
 							imgui.unindent()
 						end
+						imgui.pop_id()
 					end
 				end
 				imgui.unindent()
@@ -1788,12 +1831,11 @@ re.on_frame(function()
 				if imgui.is_mouse_clicked(1) then
 					imgui.set_clipboard(Mod.Info.Source)
 				end
-				imgui.begin_tooltip()
 				imgui.set_tooltip("Right click to copy to clipboard")
-				imgui.end_tooltip()
 			end
 			imgui.unindent()
 		end
+		imgui.pop_item_width()
 		imgui.end_window()
 		for k,v in pairs(CfgChanged) do
 			if v == true then
