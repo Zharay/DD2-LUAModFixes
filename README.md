@@ -25,7 +25,7 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 
 ### [Carry It For Me](https://www.nexusmods.com/dragonsdogma2/mods/284) by [lingsamuel](https://www.nexusmods.com/dragonsdogma2/users/21480414)
 - Updated to support Dark Arisen
-- Now uses a snapshot of the player's inventory to then check what item gets added. Should the other methods to get items fail, it will fall back to this.
+- Now uses a fallback snapshot of the player's inventory to check what item was added should old methods fail
 - Fixed GetItem calls to use the updated signatures
 - GetItemOption.EventType is now being used instead
 - Fixed a bug pertaining to event items never being filtered correctly
