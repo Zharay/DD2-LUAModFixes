@@ -3,6 +3,7 @@
 local debug = false
 local DefaultConfig = {
     KeepMinimapMarkers = true, -- if set to false, will also stop the ! markers from appearing on minimap
+    DisableAllMessages = false,
     AutoSaveChanges = false, -- if true, blocklist changes will automatically be saved to config without needing to press "Save Config"
     DefaultParams = {
         Action = "Block", -- "Block", "Cooldown", "Probability"
@@ -865,7 +866,7 @@ sdk.hook(
             Session.Messages[loggedId].last_attempt = cur_time
         end
         
-        local isBlocked = false
+        local isBlocked = Config.DisableAllMessages
         if bannedId then
             -- bannedId might be different than the actual ID being played, since we look for any banned IDs in the same CategoryData
             -- make sure to also log last_attempt/last_spoken for bannedId
@@ -874,11 +875,15 @@ sdk.hook(
             end
             Session.Messages[bannedId].last_attempt = cur_time
             
-            isBlocked = blockListCheckActionBlocked(bannedId)
+            if Config.DisableAllMessages then
+                Session.Messages[bannedId].last_blocked = cur_time
+            else
+                isBlocked = blockListCheckActionBlocked(bannedId)
+            end
             
             if not isBlocked then
                 Session.Messages[bannedId].last_spoken = cur_time
-            else
+            elseif not Config.DisableAllMessages then
                 Session.Messages[bannedId].last_blocked = cur_time
             end
         end
@@ -953,6 +958,11 @@ re.on_draw_ui(function()
         imgui.separator()
         
         changed, Config.KeepMinimapMarkers = imgui.checkbox("Keep minimap markers from blocked messages", Config.KeepMinimapMarkers)
+        if changed then
+            Session.UnsavedChanges = true
+        end
+
+        changed, Config.DisableAllMessages = imgui.checkbox("Disable all pawn messages", Config.DisableAllMessages)
         if changed then
             Session.UnsavedChanges = true
         end
