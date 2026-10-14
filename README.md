@@ -35,12 +35,6 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Fixed equipment not being passed to pawns
 - Now uses a proper round-robin distribution, spreading out the load until everyone else is full
 
-### [Food Fights Fatigue](https://www.nexusmods.com/dragonsdogma2/mods/266) by [RyselZ](https://www.nexusmods.com/dragonsdogma2/users/7479387)
-- Now uses `app.ItemUseEffect` and explicit `getItemData` instead of relying solely on `ItemManager`
-- It will retry should the database not be ready yet
-- Should apply these effects immediately on start or when settings change as it used to
-- Added options in REFramework menu. Values *should* update in real-time but mods that show the values may not update immediately
-
 ### [EkiToolsBox](https://www.nexusmods.com/dragonsdogma2/mods/411) by [Ekibunnel](https://www.nexusmods.com/dragonsdogma2/users/4522098)
 - Added unique IMGUI IDs to fix conflicts
 - Fixed outdated references
