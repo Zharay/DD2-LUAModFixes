@@ -3,6 +3,8 @@
 # DD2 LUA Mod Fixes
 A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your own risk.
 
+This collection of mods can also be found in [NexusMods](https://www.nexusmods.com/dragonsdogma2/mods/1723)
+
 ## Fixed Mods 
 
 ### [Shut Up Pawns](https://www.nexusmods.com/dragonsdogma2/mods/248) by [emoose](https://www.nexusmods.com/dragonsdogma2/users/1439296)
@@ -46,6 +48,15 @@ A collection of Dragon's Dogma 2 REFramework LUA mods that I fixed. Use at your 
 - Fixed sliders incorrectly applying unless you are hovering over it
 - Fix for having gaps in pawn party
 - Fixed several possible cases nil-access bugs
+
+## [Pawn Standby Disabler](https://www.nexusmods.com/dragonsdogma2/mods/680) by [Geonode](https://www.nexusmods.com/dragonsdogma2/users/6993355)
+- Fixed crash on start. We no longer skip controller logic at start
+- Fixed `app.PawnManager` usage
+- Saved settings correctly to the json it is expecting instead of `pawn-sd.json.json`
+- Removed `GuiManager.OnChangeScreenType` (loading screen) as its not needed
+- Removed old commented code that never worked
+- We no longer skip `update` methods as this was what was setting/clearing "Wait" commands (either from the player, on game load, or port crystal teleport)
+- Added a "Release standby pawns" button in the options menu for times when pawns are locked in a standby state (like due to quests or cutscenes)
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
