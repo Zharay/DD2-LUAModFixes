@@ -1,150 +1,152 @@
 local sdk = sdk
 local re = re
 
-local config = json.load_file('pawn-sd.json.json') or {}
+local CONFIG_FILE = 'pawn-sd.json'
+
+local config = json.load_file(CONFIG_FILE) or {}
 
 if config.Enabled == nil then
-	config.Enabled = true
+    config.Enabled = true
 end
 
-if config.IsForcedWaitEvent == nil then
-    config.IsForcedWaitEvent = false
-end
+-- app.PawnOrderController.PawnOrder.Wait
+local ORDER_WAIT = 4
 
+-- Frames after a (re)load during which a leftover standby state is released.
+local RELEASE_WINDOW_FRAMES = 600
+
+local requestRelease = false
+local didForceWait = false
+local lastController = nil
+local controllerFrames = 0
+
+-- app.PawnManager is registered as a managed singleton under its own name,
+-- not under 'app.AppSingleton`1<app.PawnManager>'.
 local function getPawnManager()
-    if PawnManager == nil then PawnManager = sdk.get_managed_singleton('app.AppSingleton`1<app.PawnManager>'):get_Instance() end
-    return PawnManager
+    return sdk.get_managed_singleton('app.PawnManager')
 end
 
-local ChangeOnLoad = false
-sdk.hook(
-    sdk.find_type_definition('app.GuiManager'):get_method('OnChangeSceneType'),
-    nil,
-    function(retval)
-        if not PawnManager and config.Enabled then
-            PawnManager = getPawnManager()
-            local configChanged = false
-            if PawnManager._IsForcedWaitEvent then
-                PawnManager._IsForcedWaitEvent = true
-                --[[config.IsForcedWaitEvent = true
-                configChanged = true
-                ChangeOnLoad = true]]--
-            elseif not PawnManager._IsForcedWaitEvent then
-                PawnManager._IsForcedWaitEvent = false
-                --[[config.IsForcedWaitEvent = false
-                configChanged = true
-                ChangeOnLoad = true]]--
-            end
-
-            --[[if configChanged then
-                json.dump_file("pawn-sd.json", config)
-            end]]--
-        end
-
-        return retval
+local function hook(typeName, methodName, pre, post)
+    local typeDef = sdk.find_type_definition(typeName)
+    local method = typeDef and typeDef:get_method(methodName)
+    if method == nil then
+        log.error('[Pawn Standby Disabler] Could not find ' .. typeName .. '.' .. methodName)
+        return
     end
-)
+    sdk.hook(method, pre, post)
+end
 
---[[sdk.hook(
-    sdk.find_type_definition('app.HumanActionSelector'):get_method('update'),
-    function()
-        if ChangeOnLoad and config.Enabled and PawnManager then
-            ChangeOnLoad = false
+local function skipIfEnabled()
+    if config.Enabled then
+        return sdk.PreHookResult.SKIP_ORIGINAL
+    end
+end
 
-            if config.IsForcedWaitEvent then
-                PawnManager._IsForcedWaitEvent = true
-            else
-                PawnManager._IsForcedWaitEvent = false
-            end
+-- Releases the party from standby (same routine the game uses when resting at an inn).
+local function releaseStandby(pawnManager)
+    if pawnManager ~= nil and pawnManager:get_field('_IsStandby') then
+        pawnManager:call('insuranceComebackPartyPawn')
+    end
+end
+
+-- Ch1StandbyArea.start -> StandbyAreaInfo.setup + caches the controller.
+-- Skipping it means the standby areas never detect the player.
+-- Ch1StandbyArea.update null-checks the cached controller, so this is safe.
+hook('app.Ch1StandbyArea', 'start', skipIfEnabled, nil)
+hook('app.StandbyAreaInfo', 'setup', skipIfEnabled, nil)
+
+-- Ch1StandbyAreaController.start and .update must keep running:
+--  * start assigns PawnManager.StandbyAreaController, which
+--    PLPartyTalkController.start dereferences unconditionally (crash if null).
+--  * update is what calls PawnManager.comebackPartyPawn to bring a standing-by
+--    party back. Skipping it leaves pawns frozen once PawnManager._IsStandby is
+--    set (e.g. restored from a save), since registPawn then puts every pawn
+--    straight back into standby.
+-- Instead, clear the area triggers so update can only ever bring pawns back.
+hook('app.Ch1StandbyAreaController', 'update', function(args)
+    if not config.Enabled then
+        return
+    end
+
+    local controller = sdk.to_managed_object(args[2])
+    if controller == nil then
+        return
+    end
+
+    controller:set_field('_IsHitPlayer', false)
+    controller:set_field('_StandbyType', 0)
+
+    if controller ~= lastController then
+        lastController = controller
+        controllerFrames = 0
+    end
+
+    local pawnManager = getPawnManager()
+    if pawnManager == nil then
+        return
+    end
+
+    -- A standby state with no active area (left over from a save or from
+    -- before the mod was enabled) would never be released by update itself.
+    if controllerFrames < RELEASE_WINDOW_FRAMES then
+        controllerFrames = controllerFrames + 1
+        if not controller:get_field('_IsNeedStandby') and pawnManager:get_field('_IsStandby') then
+            releaseStandby(pawnManager)
+            controllerFrames = RELEASE_WINDOW_FRAMES
         end
-    end,
-    nil
-)]]--
+    end
 
-sdk.hook(
-    sdk.find_type_definition('app.StandbyAreaInfo'):get_method('setup'),
-    function()
-        if config.Enabled then
-            return sdk.PreHookResult.SKIP_ORIGINAL
-        end
-    end,
-    nil
-)
+    if requestRelease then
+        requestRelease = false
+        releaseStandby(pawnManager)
+    end
+end, nil)
 
-sdk.hook(
-    sdk.find_type_definition('app.Ch1StandbyArea'):get_method('start'),
-    function()
-        if config.Enabled then
-            return sdk.PreHookResult.SKIP_ORIGINAL
-        end
-    end,
-    nil
-)
+-- updateWaitPosition is also called by Ferrystone loading/teleport and the AI
+-- meta controller, so only force the wait event for an actual Wait order.
+hook('app.PawnOrderController', 'updateWaitPosition', function(args)
+    if not config.Enabled then
+        return
+    end
 
-sdk.hook(
-    sdk.find_type_definition('app.Ch1StandbyAreaController'):get_method('start'),
-    function()
-        if config.Enabled then
-            return sdk.PreHookResult.SKIP_ORIGINAL
-        end
-    end,
-    nil
-)
+    local orderController = sdk.to_managed_object(args[2])
+    if orderController == nil or orderController:call('get_NextOrder') ~= ORDER_WAIT then
+        return
+    end
 
-sdk.hook(
-    sdk.find_type_definition('app.Ch1StandbyAreaController'):get_method('update'),
-    function()
-        if config.Enabled then
-            return sdk.PreHookResult.SKIP_ORIGINAL
-        end
-    end,
-    nil
-)
+    local pawnManager = getPawnManager()
+    if pawnManager ~= nil and not pawnManager:get_field('_IsForcedWaitEvent') then
+        pawnManager:set_field('_IsForcedWaitEvent', true)
+        didForceWait = true
+    end
+end, nil)
 
-sdk.hook(
-    sdk.find_type_definition('app.PawnOrderController'):get_method('updateWaitPosition'),
-    function()
-        PawnManager = getPawnManager()
-        local configChanged = false
-        if not PawnManager._IsForcedWaitEvent and config.Enabled then
-            PawnManager._IsForcedWaitEvent = true
-            --[[config.IsForcedWaitEvent = true
-            configChanged = true
+-- Only undo a forced wait this script set, never one started by the game
+-- (quests / StandbyAreaRDL use the same flag).
+hook('app.PawnOrderController', 'onExitWait', function()
+    if not didForceWait then
+        return
+    end
+    didForceWait = false
 
-            if configChanged then
-                json.dump_file("pawn-sd.json", config)
-            end]]--
-        end
-    end,
-    nil
-)
-
-sdk.hook(
-    sdk.find_type_definition('app.PawnOrderController'):get_method('onExitWait'),
-    function()
-        PawnManager = getPawnManager()
-        local configChanged = false
-        if PawnManager._IsForcedWaitEvent and config.Enabled then
-            PawnManager._IsForcedWaitEvent = false
-            --[[config.IsForcedWaitEvent = false
-            configChanged = true
-
-            if configChanged then
-                json.dump_file("pawn-sd.json", config)
-            end]]--
-        end
-    end,
-    nil
-)
+    local pawnManager = getPawnManager()
+    if pawnManager ~= nil then
+        pawnManager:set_field('_IsForcedWaitEvent', false)
+    end
+end, nil)
 
 re.on_draw_ui(function()
     if imgui.tree_node("Pawn Standby Disabler") then
-		local configChanged = false
-		configChanged, config.Enabled = imgui.checkbox("Enabled", config.Enabled)
+        local configChanged = false
+        configChanged, config.Enabled = imgui.checkbox("Enabled", config.Enabled)
 
-        imgui.tree_pop();
+        if imgui.button("Release pawns from standby") then
+            requestRelease = true
+        end
+
+        imgui.tree_pop()
         if configChanged then
-            json.dump_file("pawn-sd.json", config)
+            json.dump_file(CONFIG_FILE, config)
         end
     end
 end)

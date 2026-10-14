@@ -84,6 +84,9 @@ jobs:
             reframework/autorun/HigherDropRateOrNumber.lua \
             reframework/data/HigherDropRateOrNumber.json
 
+          make_zip pawn-standby-disabler \
+            reframework/autorun/pawn-standby-disabler.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
