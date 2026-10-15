@@ -70,6 +70,9 @@ local COLOR_DELETE_BUTTON = 0x700000FF
 local COLOR_PRESET_BUTTON = 0xA0800000
 local UI_ID = 1 -- increment to force blocklist trees to collapse
 local MESSAGE_LOG_SIZE = 10
+local isAddingBlockListEntry = false
+local newBlockListEntry = ""
+local addBlockListEntryError = nil
 
 ---
 --- Helpers
@@ -171,16 +174,22 @@ end
 --- Blocklist
 ---
 
--- blocklist entries are matched as a case-insensitive substring of the spoken message text,
--- so a single preset entry can cover multiple message variants that share a grouping of words
+-- Match case-insensitive word sequences, treating punctuation as word separators.
+local function normalizeBlockListText(text)
+    return (text:lower():gsub("%W", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 local function blockListFindEntry(messageText)
     if not messageText or messageText == "" then
         return nil
     end
-    local haystack = messageText:lower()
+    local haystack = " " .. normalizeBlockListText(messageText) .. " "
     for _, entry in ipairs(Config.BlockList) do
-        if entry.id and entry.id ~= "" and haystack:find(entry.id:lower(), 1, true) then
-            return entry
+        if entry.id and entry.id ~= "" then
+            local needle = normalizeBlockListText(entry.id)
+            if needle ~= "" and haystack:find(" " .. needle .. " ", 1, true) then
+                return entry
+            end
         end
     end
     return nil
@@ -219,11 +228,14 @@ local function blockListFindAllEntries(texts)
     local matches = {}
     for _, entry in ipairs(Config.BlockList) do
         if entry.id and entry.id ~= "" then
-            local needle = entry.id:lower()
+            local needle = normalizeBlockListText(entry.id)
             for _, text in ipairs(texts) do
-                if text and text ~= "" and text:lower():find(needle, 1, true) then
-                    table.insert(matches, entry)
-                    break
+                if text and text ~= "" and needle ~= "" then
+                    local haystack = " " .. normalizeBlockListText(text) .. " "
+                    if haystack:find(" " .. needle .. " ", 1, true) then
+                        table.insert(matches, entry)
+                        break
+                    end
                 end
             end
         end
@@ -1054,7 +1066,36 @@ re.on_draw_ui(function()
         imgui.pop_style_color(1)
         
         if imgui.tree_node("Blocklist (" .. #Config.BlockList .. " items)###supBlocklist") then
-            imgui.text("(some variants of blocked lines will also be blocked)")
+            imgui.text("(case-insensitive whole-word matches; punctuation is ignored)")
+            imgui.separator()
+            if imgui.button("Add Entry") then
+                isAddingBlockListEntry = not isAddingBlockListEntry
+                addBlockListEntryError = nil
+            end
+            if isAddingBlockListEntry then
+                imgui.same_line()
+                local changed
+                changed, newBlockListEntry = imgui.input_text("##newBlockListEntry", newBlockListEntry)
+                if changed then
+                    addBlockListEntryError = nil
+                end
+                imgui.same_line()
+                if imgui.button("Add##newBlockListEntry") then
+                    if not newBlockListEntry:match("%S") then
+                        addBlockListEntryError = "Enter text to block."
+                    elseif blockListAdd(newBlockListEntry) then
+                        newBlockListEntry = ""
+                        isAddingBlockListEntry = false
+                        addBlockListEntryError = nil
+                        Session.UnsavedChanges = true
+                    else
+                        addBlockListEntryError = "That entry is already in the blocklist."
+                    end
+                end
+                if addBlockListEntryError then
+                    imgui.text(addBlockListEntryError)
+                end
+            end
             imgui.separator()
             if #Config.BlockList == 0 then
                 imgui.text("    Empty!")
