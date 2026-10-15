@@ -43,7 +43,7 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Fix for having gaps in pawn party
 - Fixed several possible cases nil-access bugs
 
-## [Pawn Standby Disabler](https://www.nexusmods.com/dragonsdogma2/mods/680) by [Geonode](https://www.nexusmods.com/dragonsdogma2/users/6993355)
+### [Pawn Standby Disabler](https://www.nexusmods.com/dragonsdogma2/mods/680) by [Geonode](https://www.nexusmods.com/dragonsdogma2/users/6993355)
 - Fixed crash on start. We no longer skip controller logic at start
 - Fixed `app.PawnManager` usage
 - Saved settings correctly to the json it is expecting instead of `pawn-sd.json.json`

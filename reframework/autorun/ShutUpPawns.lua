@@ -93,8 +93,9 @@ end
 
 local MessageLog = {} -- log of the last few messages, separate to Session.Messages so it'll be kept in the right order
 
-local function addToLog(id, messageText)
-    table.insert(MessageLog, 1, {id = id, text = messageText, time = os.clock()})
+-- candidateTexts: text of every variant in the played segment, since blocking checks all of them (not just the played one)
+local function addToLog(id, messageText, candidateTexts)
+    table.insert(MessageLog, 1, {id = id, text = messageText, candidates = candidateTexts or {}, time = os.clock()})
     if #MessageLog > MESSAGE_LOG_SIZE then
         table.remove(MessageLog)
     end
@@ -211,6 +212,37 @@ end
 
 local function blockListContains(messageText)
     return blockListFindEntry(messageText) ~= nil
+end
+
+-- returns every blocklist entry matching any of the given texts (unique, in blocklist order)
+local function blockListFindAllEntries(texts)
+    local matches = {}
+    for _, entry in ipairs(Config.BlockList) do
+        if entry.id and entry.id ~= "" then
+            local needle = entry.id:lower()
+            for _, text in ipairs(texts) do
+                if text and text ~= "" and text:lower():find(needle, 1, true) then
+                    table.insert(matches, entry)
+                    break
+                end
+            end
+        end
+    end
+    return matches
+end
+
+local function blockListRemoveEntries(entries)
+    local removed = false
+    for _, match in ipairs(entries) do
+        for i, entry in ipairs(Config.BlockList) do
+            if entry == match then
+                table.remove(Config.BlockList, i)
+                removed = true
+                break
+            end
+        end
+    end
+    return removed
 end
 
 local function blockListRemove(messageText)
@@ -813,6 +845,7 @@ sdk.hook(
         local bannedId = nil
         local loggedId = nil
         local loggedMessage = nil
+        local candidateTexts = {}
         
         if candidate ~= nil and candidate._MsgId ~= nil then
             local text = getMessageFromGuid(candidate._MsgId)
@@ -836,6 +869,12 @@ sdk.hook(
                 
                 if not loggedId and candidateText ~= nil and candidateText ~= "" then
                     loggedId = candidateText
+                end
+                
+                -- use raw text so placeholder "(failed to find...)" strings don't get matched/stored
+                local rawText = getRawMessageText(cur_candidate._MsgId)
+                if rawText then
+                    table.insert(candidateTexts, rawText)
                 end
                 
                 if not loggedMessage and candidateText ~= nil and candidateText ~= "" then
@@ -892,7 +931,7 @@ sdk.hook(
             if isBlocked then
                 loggedMessage = "(blocked) " .. loggedMessage
             end
-            addToLog(loggedId, loggedMessage)
+            addToLog(loggedId, loggedMessage, candidateTexts)
         end
         
         if not isBlocked then
@@ -1046,16 +1085,33 @@ re.on_draw_ui(function()
                 imgui.pop_style_color(1)
                 local currentTime = os.clock()
                 for i, message in ipairs(MessageLog) do
+                    local matchedEntries = {}
                     
                     if message.id ~= nil then
-                        if blockListContains(message.id) then
+                        local texts = {message.id}
+                        for _, t in ipairs(message.candidates or {}) do
+                            table.insert(texts, t)
+                        end
+                        matchedEntries = blockListFindAllEntries(texts)
+                        
+                        if #matchedEntries > 0 then
                             imgui.push_style_color(21, COLOR_DELETE_BUTTON)
                             if imgui.button("Unblock##" .. tostring(i)) then
-                                if blockListRemove(message.id) then
+                                if blockListRemoveEntries(matchedEntries) then
                                     Session.UnsavedChanges = true
                                 end
                             end
                             imgui.pop_style_color(1)
+                            
+                            -- tooltip shows which blocklist entries Unblock will remove
+                            if imgui.is_item_hovered() then
+                                local count = #matchedEntries
+                                local lines = {string.format("Matched %d blocklist %s:", count, count == 1 and "entry" or "entries")}
+                                for _, entry in ipairs(matchedEntries) do
+                                    table.insert(lines, (string.gsub("  \"" .. entry.id .. "\"", "\n", " ")))
+                                end
+                                imgui.set_tooltip(table.concat(lines, "\n"))
+                            end
                         else
                             if imgui.button("Block##" .. tostring(i)) then
                                 if blockListAdd(message.id) then
