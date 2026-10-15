@@ -14,6 +14,7 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - It will now try to reobtain the `app_MessageManager` if it is never loaded
 - Fixed presets always re-applying themselves when you had none selected
 - Added option to completely silence your pawns. They should never speak again with this enabled.
+- Added option to manually input your own blocklist entries (so "ingredient" will block any message that contains the word)
 
 ### [Hide Helmets Out of Combat](https://www.nexusmods.com/dragonsdogma2/mods/961) by [CriticalError](https://www.nexusmods.com/dragonsdogma2/users/76665613)
 - Now checks if we are in combat every 15 frames instead of every frame, reducing performance impact.
