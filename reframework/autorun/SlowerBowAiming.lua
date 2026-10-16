@@ -1,4 +1,4 @@
---[[ SlowerBowAiming 1.1.1
+--[[ SlowerBowAiming 1.1.X
 --  [BUGFIX] resolved issue where aim effect filter persists on pause menu
 --  [BUGFIX] resolved uhandled resource error 
 
@@ -13,12 +13,14 @@ local enableDebug = false
 local _Application = sdk.get_native_singleton("via.Application")
 local _ApplicationType = sdk.find_type_definition("via.Application")
 local _CameraManager = sdk.get_managed_singleton("app.CameraManager")
+local _GuiManager = nil
 
 local _CharacterManager = nil
 local _Character = nil
 local _Player = nil
 local _Human = nil
 local _InputProcessor = nil
+local _CommonActionController = nil
 local MOInitialized = false
 local slowAimOn = false
 local isAiming = false
@@ -56,29 +58,17 @@ local default_config = {
 
 -- load json configuration from json file or use default configuration if
 -- file does not exist in the game data folder
-local config = json.load_file(configfile) or default_config
-
-local function keyInTable(k,t)
-    for _k,_ in pairs(t) do
-        if k == _k then return true end
-    end 
-    return false
+local config = json.load_file(configfile) or {}
+for key, value in pairs(default_config) do
+    if config[key] == nil then
+        config[key] = value
+    end
 end
 
---handle prior config saves which are missing new options with default
--- values other than false.
-if not keyInTable("throw", config) then config.throw = true end
-if not keyInTable("throwReleaseDamper", config) then config.throwReleaseDamper = 60 end
-if not keyInTable("bowReleaseDamper", config) then config.bowReleaseDamper = 60 end
-if not keyInTable("magicBowReleaseDamper", config) then config.magicBowReleaseDamper = 250 end
-if not keyInTable("easeTransition", config) then config.easeTransition = true end
-if not keyInTable("showSkillTimer", config) then config.easeTransition = true end
-if not keyInTable("skillTimerBarColor", config) then config.easeTransition = 0x5578B4CF end
-if not keyInTable("skillTimerTargetColor", config) then config.easeTransition = 0xBBFFFFFF end
-if not keyInTable("skillTimerCursorColor", config) then config.easeTransition = 0xCC000000 end
-if not keyInTable("VFXColor", config) then config.VFXColor = 0x270AB4D8 end
-
-
+if _speed[config.speed] == nil then
+    log.error("[" .. modName .. "] Invalid speed setting: " .. tostring(config.speed) .. "; using HALF")
+    config.speed = default_config.speed
+end
 
 -- update the json configfile within the game folder
 local function saveConfig()
@@ -136,11 +126,14 @@ local function initManagedObjects()
     if not MOInitialized then
         _log("initManagedObjects", "start")
         _CharacterManager = sdk.get_managed_singleton("app.CharacterManager")
+        if not _CharacterManager then return end
         _Character = sdk.to_managed_object(_CharacterManager:get_ManualPlayer())
         _Player = sdk.to_managed_object(_CharacterManager:get_ManualPlayerPlayer())
         _Human = sdk.to_managed_object(_CharacterManager:get_ManualPlayerHuman())
+        if not _Character or not _Player or not _Human then return end
         _CommonActionController = _Human:get_HumanCommonActionCtrl()
         _InputProcessor = sdk.to_managed_object(_Player:get_field("InputProcessor"))
+        _CameraManager = sdk.get_managed_singleton("app.CameraManager")
         _log("initManagedObjects", "end")
         if not _InputProcessor then 
             _log("InputProcessor", "NotFound")
@@ -166,14 +159,17 @@ local function spdToString()
 end
 
 local function getBowCharge()
-    return _Human.UpperDrawBowTrack:get_field("DrawRatio")
+    local track = _Human and _Human:get_field("UpperDrawBowTrack")
+    if track then return track:get_field("DrawRatio") end
 end
 
 local lastIsLoosed = {nil,nil}
 local function isBowLoosed()
-    if _Human ~= nil then 
-        local scb = _Human.Track:get_field("SpecialCancelBuffer")
+    local track = _Human and _Human:get_field("Track")
+    if track then
+        local scb = track:get_field("SpecialCancelBuffer")
         local BowCharge = getBowCharge()
+        if BowCharge == nil then return false end
         if lastIsLoosed[1] ~= scb or lastIsLoosed[2] ~= BowCharge then 
             _logV("IsLoosed", string.format("[%s] and [%f]",tostring(scb),BowCharge))
             lastIsLoosed = {scb,BowCharge}
@@ -184,7 +180,7 @@ local function isBowLoosed()
     end
 end
 
--- infer player is using magic bow when PrevWeaponJob is equal to 2
+-- app.Character.JobEnum.Job02 (archer) = 2; Job08 (magick archer) = 8.
 local function isBowActive()
     local bowActive = false
     if _CommonActionController ~= nil 
@@ -346,7 +342,7 @@ local function drawSkillTimer()
 end
 
 local function isCarryObject() 
-    return _Human:isCarryAnything()
+    return _Human ~= nil and _Human:isCarryAnything()
 end 
 
 local function getAdjWorkRate(_step, _base)
@@ -624,33 +620,15 @@ local function aimLogicPost()
     end
 end
 
--- hook into the PlayerInputProcessor:updateAimHoldDown method in order to test if we should activate
--- or deactivate the world (or player) timescale
-sdk.hook(sdk.find_type_definition("app.PlayerInputProcessor"):get_method("updateAimHoldDown()"),
-    function(args) aimLogicPre() end,
-    function(retval) aimLogicPost() return retval end
-)
-
--- hook into the PlayerInputProcessor:updateAimHoldDown method in order to test if we should activate
--- or deactivate the world (or player) timescale
-sdk.hook(sdk.find_type_definition("app.PlayerInputProcessor"):get_method("updateThrowAimHoldDown()"),
-    function(args) aimLogicPre() end,
-    function(retval) aimLogicPost() return retval end
-)
-
-sdk.hook(sdk.find_type_definition("app.GuiManager"):get_method("requestInstantiate(via.GameObject, via.Prefab, System.Action`1<app.PrefabInstantiateResults>, System.Int16)"),
-function(args) isPaused = true end,
-nil
-)
-
-sdk.hook(sdk.find_type_definition("app.GuiManager"):get_method("requestInstantiate(via.GameObject, via.Prefab, System.Action`1<app.PrefabInstantiateResults>, System.Int16)"),
-function(args) isPaused = true end,
-nil
-)
-
-sdk.hook(sdk.find_type_definition("app.GuiManager"):get_method("callClosePauseMenuHandler"),
-function(args) isPaused = false end,
-nil
+-- updateAimHoldDown now takes an action/checker pair; the separate throw helper is gone.
+-- Read the final bow/throw input state once per update.
+sdk.hook(sdk.find_type_definition("app.PlayerInputProcessor"):get_method("update()"),
+    function(args) initManagedObjects() end,
+    function(retval)
+        aimLogicPre()
+        aimLogicPost()
+        return retval
+    end
 )
 
 -- REFramework gui menu setup
@@ -731,6 +709,7 @@ re.on_draw_ui(function()
             imgui.text("PlayerInputProcessor")
             if _InputProcessor then object_explorer:handle_address(_InputProcessor) end
         end
+        imgui.tree_pop()
     end
 end
 )
@@ -775,6 +754,8 @@ if _experimental then
 end
 
 re.on_frame(function() 
+    _GuiManager = _GuiManager or sdk.get_managed_singleton("app.GuiManager")
+    isPaused = _GuiManager ~= nil and _GuiManager:isPausedGUI()
     if config.showSkillTimer and (isBowActive() or isMagicBowActive()) then 
         drawSkillTimer()
     end

@@ -53,6 +53,11 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - We no longer skip `update` methods as this was what was setting/clearing "Wait" commands (either from the player, on game load, or port crystal teleport)
 - Added a "Release standby pawns" button in the options menu for times when pawns are locked in a standby state (like due to quests or cutscenes)
 
+### [Slower Bow Aiming](https://www.nexusmods.com/dragonsdogma2/mods/879) by [rbwadle](https://www.nexusmods.com/dragonsdogma2/users/191391924)
+- Fixed errors invloving `TreePop()`
+- Now uses `app.PlayerInputProcessor.update()` to read bow and throw aim state once after user input
+- Now uses `app.GuiManager.isPausedGUI()` to hide the aiming filter while paused.
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
 
