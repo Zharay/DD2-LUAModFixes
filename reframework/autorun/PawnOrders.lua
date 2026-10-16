@@ -3,6 +3,8 @@
 -- Pad: the player picks the shortcut set in the REFramework menu "Specific Pawn Orders": hold LT +
 -- X/Y/B/A/A+X/B+Y, or B + D-pad and LT; each position orders the skill bound to it for the target pawn.
 -- Hold LT + D-pad: Left / Up / Right pick the target pawn (main / hired 1 / hired 2), Down cancels its action.
+-- Optional "hold LT" mode (menu): the orders open only after LT is held for a set time (0.25 s default, 0-1 s);
+-- a shorter press reaches the game as a normal LT tap (sheathe / draw).
 -- Keyboard: one key per position, picked in the same menu (all vocations); the game still sees the key.
 -- Action mechanism adapted from "Additional Pawn Commands" by its Nexus author
 -- (https://www.nexusmods.com/dragonsdogma2/mods/1020).
@@ -10,7 +12,7 @@
 -- (https://www.nexusmods.com/dragonsdogma2/mods/1223).
 -- Input filtering on app.UserInput.update follows dd2gether's realtime_menus.lua.
 
-local VERSION = "0.9.41" -- release: HUD labels never written back while RB (aim) is held
+local VERSION = "0.9.42" -- release: optional "hold LT" mode (LT tap = sheathe / draw, hold time 0-1 s in the menu)
 -- DEV = test build: full log kept across runs, skill table file, F9-F10 test aids.
 -- Release (false): short log recreated each session, no toggles.
 local DEV = false
@@ -334,8 +336,20 @@ for btn, name in pairs({ RLeft = "X", RUp = "Y", RRight = "B", RDown = "A" }) do
         FACE_BIT[name] = BTN[btn]
     end
 end
+
 -- Two face buttons pressed within this many seconds = the pair (A+X / B+Y), like the player's RB skills
 local PAIR_WINDOW = 0.10
+-- Optional "hold LT" mode (menu): LT opens the orders only once held this long; a shorter press is given back to
+-- the game as an LT tap (sheathe / draw). A face button or D-pad pressed under LT opens them at once.
+-- One table for this mode's state: the main chunk is at Lua's 200-locals limit.
+local LTH = {
+    DEFAULT = 0.25,
+    press_t = nil, -- time LT physically went down (nil = up)
+    open = false,  -- this LT press opened the orders (always at once outside hold mode)
+    tap = nil,     -- { flags, frame } short LT press being replayed to the game
+    chord_bits = DPAD_BITS, -- + face buttons below: pressed under LT, they open the orders at once
+}
+for bit in pairs(FACE_NAME) do LTH.chord_bits = LTH.chord_bits | bit end
 local PAIR = { A = { "X", "A+X" }, X = { "A", "A+X" }, B = { "Y", "B+Y" }, Y = { "B", "B+Y" } }
 local PAD_FIELDS = { "PadButton", "PadButtonDown", "PadButtonUp", "PadButtonRepeat" }
 local FLAG_FIELDS = { "ButtonOnFlags", "ButtonTriggerFlags", "ButtonRepeatFlags", "ButtonReleaseFlags" }
@@ -2156,6 +2170,11 @@ local lt_flag_mask = 0 -- action flags raised by LT / the buttons under it
 local lt_learn = 0     -- frames left to collect raised flags after a hidden button went down
 local lt_wait = nil    -- { name, t } face button waiting PAIR_WINDOW for its pair
 
+function LTH.hold_time()
+    local v = tonumber(config.lt_hold_time) or LTH.DEFAULT
+    return math.max(0.0, math.min(1.0, v))
+end
+
 local function lt_request(name)
     chord_requests[#chord_requests + 1] = { chord = "LT", arrow = name }
 end
@@ -2185,6 +2204,30 @@ local function clear_bits(input, fields, mask)
     end
 end
 
+function LTH.set_bits(input, fields, mask)
+    for _, f in ipairs(fields) do
+        local v = input:get_field(f) or 0
+        if v & mask ~= mask then input:set_field(f, v | mask) end
+    end
+end
+
+-- hold mode: a short LT press, hidden while undecided, is handed to the game as a tap over the next frames
+function LTH.tap_frame(input)
+    LTH.tap.frame = LTH.tap.frame + 1
+    if LTH.tap.frame < 3 then
+        LTH.set_bits(input, { "PadButton" }, LT_BITS)
+        LTH.set_bits(input, { "ButtonOnFlags" }, LTH.tap.flags)
+    end
+    if LTH.tap.frame == 1 then
+        LTH.set_bits(input, { "PadButtonDown" }, LT_BITS)
+        LTH.set_bits(input, { "ButtonTriggerFlags" }, LTH.tap.flags)
+    elseif LTH.tap.frame >= 3 then
+        LTH.set_bits(input, { "PadButtonUp" }, LT_BITS)
+        LTH.set_bits(input, { "ButtonReleaseFlags" }, LTH.tap.flags)
+        LTH.tap = nil
+    end
+end
+
 local function on_player_input(input)
     local pad = input:get_field("PadButton") or 0
     local down = input:get_field("PadButtonDown") or 0
@@ -2204,13 +2247,35 @@ local function on_player_input(input)
         flags_prev = flags
     end
 
-    local lt_held = chord_on("LT") and LT_BITS ~= 0 and pad & LT_BITS ~= 0
+    local lt_phys = chord_on("LT") and LT_BITS ~= 0 and pad & LT_BITS ~= 0
+    if lt_phys then
+        if not LTH.press_t then
+            LTH.press_t = now()
+            LTH.open = config.lt_hold ~= true
+        end
+        -- hold mode: held long enough, or a chord button pressed under LT (cannot be a tap any more)
+        if not LTH.open and (now() - LTH.press_t >= LTH.hold_time() or down & LTH.chord_bits ~= 0) then
+            LTH.open = true
+            pad_log(string.format("[LT] hold: orders open after %.2f s", now() - LTH.press_t))
+        end
+    else
+        if LTH.press_t and not LTH.open and lt_on then
+            -- short press: give the game its LT tap back with the flags LT raised (learned below)
+            LTH.tap = { flags = lt_flag_mask, frame = 0 }
+            pad_log(string.format("[LT] tap after %.2f s; replayed to the game (flags 0x%X)", now() - LTH.press_t,
+                lt_flag_mask))
+        end
+        LTH.press_t = nil
+        LTH.open = false
+    end
+    local lt_held = lt_phys and LTH.open
     -- RB held = the game drives the skill palette (bow / magic bow / throw aim); read by the HUD (0.9.41)
     AIM.rb_now = (BTN.RTrigTop or 0) ~= 0 and pad & BTN.RTrigTop ~= 0
     if lt_held and not lt_down then AIM.rb_at_lt = AIM.rb_now end
     lt_down = lt_held
-    if lt_held and not lt_on then
+    if lt_phys and not lt_on then
         lt_on = true
+        LTH.tap = nil
         lt_pad_base = pad_before & ~LT_BITS
         lt_flag_mask = 0
         lt_learn = 0
@@ -2280,6 +2345,7 @@ local function on_player_input(input)
         counters.swallowed = counters.swallowed + 1
         if held == 0 then swallowing = 0 end
     end
+    if LTH.tap and not lt_on then LTH.tap_frame(input) end
 end
 
 if player_group ~= nil then
@@ -3183,6 +3249,21 @@ re.on_draw_ui(function()
         end
         imgui.text("Hold the first button and press the second: the target pawn uses the skill bound there.")
         imgui.text("Hold LT + D-pad: Left = main pawn, Up = hired pawn 1, Right = hired pawn 2 (target), Down = cancel its action.")
+        local hold_changed, hold_v = imgui.checkbox("Hold LT to open the orders (a tap keeps LT's game action)##lthold",
+            config.lt_hold == true)
+        if hold_changed then
+            config.lt_hold = hold_v
+            save_config()
+            log_line("[BIND] hold LT " .. tostring(hold_v))
+        end
+        if config.lt_hold == true then
+            local t_changed, t_v = imgui.slider_float("LT hold time (s)##lthold_t", LTH.hold_time(), 0.0, 1.0, "%.2f")
+            if t_changed then
+                config.lt_hold_time = math.max(0.0, math.min(1.0, t_v))
+                save_config()
+            end
+            imgui.text("LT released sooner = sheathe / draw as usual. Pressing a face button or D-pad under LT opens the orders at once.")
+        end
         imgui.text("Skills and keyboard keys are kept for every set; only the chosen set is shown and used.")
         local ts = scanned[target_slot]
         imgui.text(string.format("Target now: %s%s", SLOT_LABEL[target_slot], ts and (" - " .. ts.name) or ""))
