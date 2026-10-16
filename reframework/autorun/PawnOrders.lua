@@ -10,7 +10,7 @@
 -- (https://www.nexusmods.com/dragonsdogma2/mods/1223).
 -- Input filtering on app.UserInput.update follows dd2gether's realtime_menus.lua.
 
-local VERSION = "0.9.39" -- release: no game exceptions from the action list reads, approved test switches fixed
+local VERSION = "0.9.41" -- release: HUD labels never written back while RB (aim) is held
 -- DEV = test build: full log kept across runs, skill table file, F9-F10 test aids.
 -- Release (false): short log recreated each session, no toggles.
 local DEV = false
@@ -2205,6 +2205,9 @@ local function on_player_input(input)
     end
 
     local lt_held = chord_on("LT") and LT_BITS ~= 0 and pad & LT_BITS ~= 0
+    -- RB held = the game drives the skill palette (bow / magic bow / throw aim); read by the HUD (0.9.41)
+    AIM.rb_now = (BTN.RTrigTop or 0) ~= 0 and pad & BTN.RTrigTop ~= 0
+    if lt_held and not lt_down then AIM.rb_at_lt = AIM.rb_now end
     lt_down = lt_held
     if lt_held and not lt_on then
         lt_on = true
@@ -2856,6 +2859,10 @@ function AIM.palette_colors_back(saved)
     end
 end
 
+-- 0.9.41 (crash: LT released or tapped while aiming the bow): while RB is held the game drives this palette, and
+-- putting its texts back then (set_Message) corrupts the game heap - the game crashed a few ms later.
+-- An LT hold that starts with RB held leaves the palette and the D-pad labels to the game, and a restore waits
+-- until RB is up.
 local function palette_restore(why)
     local saved = palette_saved
     palette_saved = nil
@@ -2892,7 +2899,7 @@ local function palette_frame()
             return
         end
     end
-    local want = lt_down and cur_job ~= nil
+    local want = lt_down and cur_job ~= nil and not AIM.rb_at_lt
     if want and not palette_saved then
         -- 0.9.39: looked up again at each LT hold, so a GUI rebuilt by a load (title screen, new game) is never
         -- written through the old objects; the 0.9.38 lookup was once per run
@@ -2901,7 +2908,7 @@ local function palette_frame()
     end
     if DEV then palette_watch_frame() end
     if not want then
-        if palette_saved then palette_restore("LT released") end
+        if palette_saved and not AIM.rb_now then palette_restore("LT released") end
         if palette_check then
             palette_check = palette_check - 1
             if palette_check == 0 then
@@ -3065,8 +3072,8 @@ local function dpad_frame()
             return
         end
     end
-    if not lt_down then
-        if dpad_saved then dpad_restore("LT released") end
+    if not lt_down or AIM.rb_at_lt then
+        if dpad_saved and not AIM.rb_now then dpad_restore("LT released") end
         return
     end
     if not dpad_saved then
