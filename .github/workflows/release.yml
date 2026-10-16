@@ -93,6 +93,9 @@ jobs:
           make_zip pawn-standby-disabler \
             reframework/autorun/pawn-standby-disabler.lua
 
+          make_zip SlowerBowAiming \
+            reframework/autorun/SlowerBowAiming.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
