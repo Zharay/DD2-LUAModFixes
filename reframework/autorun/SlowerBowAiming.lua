@@ -5,6 +5,10 @@
 ]]
 -- globals
 local modName = "SlowerBowAiming"
+local hotkeys = require("Hotkeys/Hotkeys")
+local aimHotkey = modName .. " Toggle Slow Aim"
+local defaultHotkeys = {[aimHotkey] = "L3"}
+local activationModes = {"Tap", "Hold"}
 local configfile = modName .. '.json'
 local enableLog = false
 local enableLogVerbose = false
@@ -53,7 +57,10 @@ local default_config = {
     ["skillTimerBarColor"] = 0x5578B4CF,
     ["skillTimerTargetColor"] = 0xBBFFFFFF,
     ["skillTimerCursorColor"] = 0xCC000000,
-    ["oneSecSkillCharge"] = false
+    ["oneSecSkillCharge"] = false,
+    ["useHotkey"] = false,
+    ["hotkeyActivationMode"] = "Tap",
+    ["hotkeyActivationDelay"] = 0.25
 }
 
 -- load json configuration from json file or use default configuration if
@@ -63,6 +70,19 @@ for key, value in pairs(default_config) do
     if config[key] == nil then
         config[key] = value
     end
+end
+
+config.Hotkeys = config.Hotkeys or {}
+hotkeys.setup_hotkeys(config.Hotkeys, defaultHotkeys)
+if config.hotkeyActivationMode ~= "Tap" and config.hotkeyActivationMode ~= "Hold" then
+    log.error("[" .. modName .. "] Invalid hotkey activation mode; using Tap")
+    config.hotkeyActivationMode = "Tap"
+end
+if type(config.hotkeyActivationDelay) ~= "number"
+    or config.hotkeyActivationDelay ~= config.hotkeyActivationDelay
+    or config.hotkeyActivationDelay < 0 or config.hotkeyActivationDelay > 1 then
+    log.error("[" .. modName .. "] Invalid hotkey activation delay; using 0.25 seconds")
+    config.hotkeyActivationDelay = 0.25
 end
 
 if _speed[config.speed] == nil then
@@ -411,11 +431,13 @@ end
 -- i.e. if the timescale is set to 0.5 then the workrate adjustment will be 2.0 ( 1 / 0.5 ) 
 local showNextWorkRate = true
 local lastWorkRate = nil
+local playerSpeedCompensated = false
 local function compensateWorkRate()
     if _Character ~= nil then 
         local workRateAdj = getAdjWorkRate()
         _Character.WorkRate.NextRateValue = workRateAdj
         _Character.WorkRate.NextApplyRate = workRateAdj
+        playerSpeedCompensated = true
         if showNextWorkRate or workRateAdj ~= lastWorkRate then 
             _logV("WorkRateAdj", workRateAdj) 
             showNextWorkRate = false
@@ -437,6 +459,7 @@ local origGamePadYawSpeed_aim = nil
 local origGamePadPitchSpeed_aim = nil
 local origGamePadYawSpeed_prj = nil
 local origGamePadPitchSpeed_prj = nil
+local cameraSpeedCompensated = false
 local function compensateGamePadAimSpeed(_activate, _step, _base)
     _step = _step or 1
     _base = _base or 1
@@ -464,6 +487,7 @@ local function compensateGamePadAimSpeed(_activate, _step, _base)
             -- Projectile Aiming Speed Settings
             _CameraManager._ThrowingAimYawSpeedRate = workRateAdj * origGamePadYawSpeed_prj
             _CameraManager._ThrowingAimPitchSpeedRate = workRateAdj * origGamePadPitchSpeed_prj
+            cameraSpeedCompensated = true
             _logV("GamePadAimSpeedAdj", string.format("PRJ [X: %f --> %f][Y: %f --> %f]", 
                 origGamePadYawSpeed_prj, _CameraManager._ThrowingAimYawSpeedRate, origGamePadPitchSpeed_prj, _CameraManager._ThrowingAimPitchSpeedRate))
         else 
@@ -475,6 +499,7 @@ local function compensateGamePadAimSpeed(_activate, _step, _base)
             _logV("GamePadAimSpeedAdj", string.format("AIM [X: %f][Y: %f]", _CameraManager._AimYawSpeedRate, _CameraManager._AimPitchSpeedRate))
             _CameraManager._ThrowingAimYawSpeedRate = origGamePadYawSpeed_prj
             _CameraManager._ThrowingAimPitchSpeedRate = origGamePadPitchSpeed_prj
+            cameraSpeedCompensated = false
             _logV("GamePadAimSpeedAdj", string.format("PRJ [X: %f][Y: %f]", _CameraManager._ThrowingAimYawSpeedRate, _CameraManager._ThrowingAimPitchSpeedRate))
         end
     end
@@ -547,9 +572,81 @@ end
 
 local carryObjectAim = false
 local dampingFrames = 0
+local hotkeyActive = false
+local hotkeyPendingAt = nil
+local hotkeyWasDown = false
+
+local function stopHotkeySlowAim()
+    hotkeyActive = false
+    hotkeyPendingAt = nil
+    if not slowAimOn then return end
+    setAppSpeed(_speed.NORMAL)
+    if cameraSpeedCompensated then compensateGamePadAimSpeed(false) end
+    if playerSpeedCompensated and _Character and _Character.WorkRate then
+        _Character.WorkRate.NextRateValue = 1
+        _Character.WorkRate.NextApplyRate = 1
+        playerSpeedCompensated = false
+    end
+    toggleVFXFilter(false, 0)
+    slowAimOn = false
+    easeIn = false
+    easeOut = false
+    easeElapsed = 0
+    isDamping = false
+    dampingFrames = 0
+    carryObjectAim = false
+    showNextWorkRate = true
+end
+
+local function canSlowAim()
+    if not MOInitialized or not isAiming then return false end
+    if isCarryObject() then return config.throw end
+    return (config.bow and isBowActive()) or (config.magic_bow and isMagicBowActive())
+end
+
+local function updateAimHotkey()
+    local down = not not hotkeys.check_hotkey(aimHotkey, true)
+    local pressed = hotkeys.check_hotkey(aimHotkey, false, true) and not hotkeyWasDown
+    hotkeyWasDown = down
+    if not config.useHotkey then
+        hotkeyActive = false
+        hotkeyPendingAt = nil
+        return
+    end
+    local binding = hotkeys.hotkeys[aimHotkey]
+    if isPaused or not canSlowAim() or binding == "[Press Input]" or binding == "[Not Bound]" then
+        stopHotkeySlowAim()
+        return
+    end
+    local now = os.clock()
+    if pressed then
+        if hotkeyActive or hotkeyPendingAt ~= nil then
+            stopHotkeySlowAim()
+            return
+        end
+        hotkeyPendingAt = now
+    end
+    if hotkeyPendingAt ~= nil then
+        if config.hotkeyActivationMode == "Hold" and not down then
+            hotkeyPendingAt = nil
+        elseif now - hotkeyPendingAt >= config.hotkeyActivationDelay then
+            hotkeyPendingAt = nil
+            hotkeyActive = true
+        end
+    end
+end
 
 local function aimLogicPost()
     if _Application ~= nil and MOInitialized then
+        if config.useHotkey then
+            if not canSlowAim() then
+                stopHotkeySlowAim()
+                return
+            elseif not hotkeyActive then
+                if slowAimOn then stopHotkeySlowAim() end
+                return
+            end
+        end
         if easeIn then 
             easeInStep()
         elseif easeOut then 
@@ -631,6 +728,10 @@ sdk.hook(sdk.find_type_definition("app.PlayerInputProcessor"):get_method("update
     end
 )
 
+re.on_script_reset(function()
+    if config.useHotkey then stopHotkeySlowAim() end
+end)
+
 -- REFramework gui menu setup
 local _changed = false
 local indx = nil
@@ -646,6 +747,23 @@ re.on_draw_ui(function()
             config.speed = speed_choices[indx]
             saveConfig() 
         end
+        _changed, config.useHotkey = imgui.checkbox("Use slow-aim hotkey", config.useHotkey)
+        if _changed then stopHotkeySlowAim() saveConfig() end
+        if hotkeys.hotkey_setter(aimHotkey, false, "Slow-aim hotkey") then
+            hotkeys.update_hotkey_table(config.Hotkeys)
+            stopHotkeySlowAim()
+            saveConfig()
+        end
+        _changed, indx = imgui.combo("Activation mode", ioftval(activationModes, config.hotkeyActivationMode), activationModes)
+        if _changed then
+            config.hotkeyActivationMode = activationModes[indx]
+            stopHotkeySlowAim()
+            saveConfig()
+        end
+        _changed, config.hotkeyActivationDelay = imgui.slider_float("Activation delay (seconds)", config.hotkeyActivationDelay, 0.00, 1.00, "%.2f")
+        if _changed then stopHotkeySlowAim() saveConfig() end
+        imgui.text("Tap: activate after delay; tap again during delay to cancel.")
+        imgui.text("Hold: hold through delay. Press again or stop aiming to turn off.")
         _changed, config.bow = imgui.checkbox("Bow", config.bow)
         if _changed then saveConfig() end
         if config.bow then 
@@ -756,6 +874,7 @@ end
 re.on_frame(function() 
     _GuiManager = _GuiManager or sdk.get_managed_singleton("app.GuiManager")
     isPaused = _GuiManager ~= nil and _GuiManager:isPausedGUI()
+    updateAimHotkey()
     if config.showSkillTimer and (isBowActive() or isMagicBowActive()) then 
         drawSkillTimer()
     end

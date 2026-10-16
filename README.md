@@ -57,6 +57,9 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Fixed errors invloving `TreePop()`
 - Now uses `app.PlayerInputProcessor.update()` to read bow and throw aim state once after user input
 - Now uses `app.GuiManager.isPausedGUI()` to hide the aiming filter while paused.
+- Added a hotkey to activate slowmo (defaults to L3 for controller) with options to tap or hold to activate. Pressing key again, leaving aim, or entering a menu will disable slowmo.
+- Hotkey activation comes with a default delay of 0.25 seconds for taps. This is to make it compatible with mods that adds dodges and other double-tap commands.
+- Because of above changes, this mod now requires [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
