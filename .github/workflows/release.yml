@@ -34,13 +34,13 @@ jobs:
             [[ -f "$template" ]] || template=modinfo.ini
             [[ -f "$image" ]] || image=DD2.jpg
             for f in "$template" "$image"; do
-              [[ -f "$f" ]] || { echo "::error::Missing metadata file for $1.zip: $f"; exit 1; }
+              [[ -f "$f" ]] || { echo "::error::Missing metadata file for FixedLuaScripts-$1.zip: $f"; exit 1; }
             done
 
             local staging
             staging="$(mktemp -d)"
             trap 'rm -rf "$staging"' EXIT
-            local archive="$PWD/dist/$1.zip"
+            local archive="$PWD/dist/FixedLuaScripts-$1.zip"
             local screenshot="${image##*/}"
             local display="Fixed Lua Scripts - $1"
             local version="1.${GITHUB_RUN_NUMBER}"
@@ -57,12 +57,13 @@ jobs:
 
           # Usage: make_zip <ZipName> <file> [file ...]
           # Paths are relative to the repo root so the zip keeps the "reframework/..." structure.
+          # Only archive filenames get the FixedLuaScripts- prefix; metadata lookup uses ZipName.
           make_zip() {
             local name="$1"; shift
             for f in "$@"; do
-              [[ -f "$f" ]] || { echo "::error::Missing file for $name.zip: $f"; exit 1; }
+              [[ -f "$f" ]] || { echo "::error::Missing file for FixedLuaScripts-$name.zip: $f"; exit 1; }
             done
-            zip -X "dist/$name.zip" "$@"
+            zip -X "dist/FixedLuaScripts-$name.zip" "$@"
             write_modinfo "$name"
           }
 
@@ -99,7 +100,7 @@ jobs:
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
-          zip -X -r dist/All-In-One.zip reframework
+          zip -X -r dist/FixedLuaScripts-All-In-One.zip reframework
           write_modinfo All-In-One
 
           ls -l dist
