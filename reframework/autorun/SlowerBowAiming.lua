@@ -1,7 +1,4 @@
 --[[ SlowerBowAiming 1.1.X
---  [BUGFIX] resolved issue where aim effect filter persists on pause menu
---  [BUGFIX] resolved uhandled resource error 
-
 ]]
 -- globals
 local modName = "SlowerBowAiming"
@@ -53,7 +50,7 @@ local default_config = {
     ["bowReleaseDamper"] = 60,
     ["magicBowReleaseDamper"] = 60,
     ["easeTransition"] = true,
-    ["showSkillTimer"] = true,
+    ["showSkillTimer"] = false,
     ["skillTimerBarColor"] = 0x5578B4CF,
     ["skillTimerTargetColor"] = 0xBBFFFFFF,
     ["skillTimerCursorColor"] = 0xCC000000,
@@ -432,11 +429,26 @@ end
 local showNextWorkRate = true
 local lastWorkRate = nil
 local playerSpeedCompensated = false
+local workRateUnavailableLogged = false
+local function getPlayerWorkRate()
+    local workRate = _Player and _Player:get_field("<WorkRate>k__BackingField")
+    if not workRate then
+        if not workRateUnavailableLogged then
+            log.error("[" .. modName .. "] Player WorkRate unavailable; skipping player speed adjustment until it is available")
+            workRateUnavailableLogged = true
+        end
+        return nil
+    end
+    workRateUnavailableLogged = false
+    return workRate
+end
+
 local function compensateWorkRate()
-    if _Character ~= nil then 
+    local workRate = getPlayerWorkRate()
+    if workRate then
         local workRateAdj = getAdjWorkRate()
-        _Character.WorkRate.NextRateValue = workRateAdj
-        _Character.WorkRate.NextApplyRate = workRateAdj
+        workRate.NextRateValue = workRateAdj
+        workRate.NextApplyRate = workRateAdj
         playerSpeedCompensated = true
         if showNextWorkRate or workRateAdj ~= lastWorkRate then 
             _logV("WorkRateAdj", workRateAdj) 
@@ -582,10 +594,13 @@ local function stopHotkeySlowAim()
     if not slowAimOn then return end
     setAppSpeed(_speed.NORMAL)
     if cameraSpeedCompensated then compensateGamePadAimSpeed(false) end
-    if playerSpeedCompensated and _Character and _Character.WorkRate then
-        _Character.WorkRate.NextRateValue = 1
-        _Character.WorkRate.NextApplyRate = 1
-        playerSpeedCompensated = false
+    if playerSpeedCompensated then
+        local workRate = getPlayerWorkRate()
+        if workRate then
+            workRate.NextRateValue = 1
+            workRate.NextApplyRate = 1
+            playerSpeedCompensated = false
+        end
     end
     toggleVFXFilter(false, 0)
     slowAimOn = false
