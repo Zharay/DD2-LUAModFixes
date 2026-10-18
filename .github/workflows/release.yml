@@ -97,6 +97,9 @@ jobs:
           make_zip SlowerBowAiming \
             reframework/autorun/SlowerBowAiming.lua
 
+          make_zip ItemHalfWeight \
+            reframework/autorun/ItemHalfWeight.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----

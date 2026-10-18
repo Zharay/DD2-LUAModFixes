@@ -57,9 +57,19 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Fixed errors invloving `TreePop()`
 - Now uses `app.PlayerInputProcessor.update()` to read bow and throw aim state once after user input
 - Now uses `app.GuiManager.isPausedGUI()` to hide the aiming filter while paused.
+- Fixed a mod conflict with any other mods that deal with `WorkRate`. Should the slowmo not be available, it will wait until it can do it instead of causing the script to fail.
 - Added a hotkey to activate slowmo (defaults to L3 for controller) with options to tap or hold to activate. Pressing key again, leaving aim, or entering a menu will disable slowmo.
 - Hotkey activation comes with a default delay of 0.25 seconds for taps. This is to make it compatible with mods that adds dodges and other double-tap commands.
 - Because of above changes, this mod now requires [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)
+
+### [ItemsHalfWeight](https://www.nexusmods.com/dragonsdogma2/mods/141) by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318)
+- Uses updated item enumerators
+- Now waits for item data to be available instead of assuming it'd be available at boot
+- Should the game rebuild its item details, this will reapply
+- Restores changes after any manual script resets
+- Item now rounds down to fit Int16 units that the game uses
+- Added actual logs for success or failure
+- Renamed the file to `ItemHalfWeight`.
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
