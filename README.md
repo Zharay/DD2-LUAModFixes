@@ -62,7 +62,7 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Hotkey activation comes with a default delay of 0.25 seconds for taps. This is to make it compatible with mods that adds dodges and other double-tap commands.
 - Because of above changes, this mod now requires [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)
 
-### [ItemsHalfWeight](https://www.nexusmods.com/dragonsdogma2/mods/141) by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318)
+### [ItemsHalfWeight](https://www.nexusmods.com/dragonsdogma2/mods/141) by [NekoNekoYukari](https://www.nexusmods.com/dragonsdogma2/users/130442123)
 - Uses updated item enumerators
 - Now waits for item data to be available instead of assuming it'd be available at boot
 - Should the game rebuild its item details, this will reapply
