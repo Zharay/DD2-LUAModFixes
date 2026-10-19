@@ -102,6 +102,10 @@ jobs:
 
           make_zip SaferRoads \
             reframework/autorun/SaferRoads.lua
+          
+          make_zip AugmentsUnleashed \
+            reframework/autorun/AugmentsUnleashed.lua \
+            reframework/data/AugmentsUnleashed.json
 
           # ---- End of entries ----
 
