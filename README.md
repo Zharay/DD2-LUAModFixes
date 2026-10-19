@@ -78,6 +78,23 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Added automatic retries if parameters are not ready to change yet
 Untested as I am knee deep in snow of the DLC but everything that this mod used has not changed since it was made!
 
+### [Augments Unleashed](https://www.nexusmods.com/dragonsdogma2/mods/559) by [K1ng4](https://www.nexusmods.com/dragonsdogma2/users/120273023)
+- Updated to latest REFramework scripting
+- Made helper functions local (could conflict with other mods otherwise)
+- Used examples from AdancedPawnSearch to do Get/Set methods within the array
+- Player and pawn functions are now one
+- Now uses the game's dynamic list size for number of augments, though it will not show (yet)
+- Vocation change will now determine who changed and if it is the player or the main pawn
+- Fixed bug where resetting scripts was actually inverting selected augments on load
+- Text boxes in the UI no longer share the same IDs (IMGUI would complain if multiple were loaded/visible)
+- Game rebuilds augment list whenever a change is detected
+- Now waits patiently until the references it wants exists
+- We now obtain a list of currently equipped augments and disable them in the augment list with a bold red X in the checkbox.
+- Tooltips will update to include if the augment is equipped already.
+- Fixed hard coded augment index ranges
+- Skip over errors involving missing JSON entries (this could've stopped the script hard)
+- Skip over IDs we do not recognize (must add missing Dark Arisen augments)
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
 
