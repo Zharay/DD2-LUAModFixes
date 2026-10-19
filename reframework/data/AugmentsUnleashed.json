@@ -1,0 +1,352 @@
+{
+    "ModStrings": {
+        "Name": "Augments Unleashed",
+        "AugmentsMenu": "Augments Menu",
+        "DiscriptiveMode": "Discriptive Mode",
+        "PlayerToggle": "Player's Enabled Augments",
+        "PawnToggle": "Pawn's Enabled Augments",
+		"AugmentsOverhualMenu": "Augments Overhual Menu",
+		"AugmentsOverhualMenu_Label_Stat": "Stat",
+		"AugmentsOverhualModeEnable": "Enable",
+		"AugmentsOverhualModeSave": "Save",
+		"AugmentsOverhualModeReset": "Reset",
+		"AugmentsOverhualModeResetWarning": "I know all my custom augments overhual will reset to default."
+    },
+    "Augments": {
+        "4": "Fighter: Provocation",
+        "5": "Fighter: Mettle",
+        "6": "Fighter: Thew",
+        "7": "Fighter: Dominion",
+        "8": "Fighter: Diligence",
+        "9": "Archer: Ambuscade",
+        "10": "Archer: Endurance",
+        "11": "Archer: Radiance",
+        "12": "Archer: Lethality",
+        "13": "Archer: Avidity",
+        "14": "Mage: Apotropaism",
+        "15": "Mage: Beatitude",
+        "16": "Mage: Intervention",
+        "17": "Mage: Perpetuation",
+        "18": "Mage: Exaltation",
+        "19": "Thief: Subtlety",
+        "20": "Thief: Gratification",
+        "21": "Thief: Poise",
+        "22": "Thief: Vigor",
+        "23": "Thief: Verve",
+        "24": "Warrior: Vitality",
+        "25": "Warrior: Impact",
+        "26": "Warrior: Pertinacity",
+        "27": "Warrior: Dominance",
+        "28": "Warrior: Intrepidity",
+        "29": "Sorcerer: Asperity",
+        "30": "Sorcerer: Stasis",
+        "31": "Sorcerer: Constancy",
+        "32": "Sorcerer: Catalysis",
+        "33": "Sorcerer: Sagacity",
+        "34": "Mystic Spearhand: Conveyance",
+        "35": "Mystic Spearhand: Opulence",
+        "36": "Mystic Spearhand: Polarity",
+        "37": "Mystic Spearhand: Refulgence",
+        "38": "Mystic Spearhand: Athleticism",
+        "39": "Magick Archer: Sustainment",
+        "40": "Magick Archer: Voracity",
+        "41": "Magick Archer: Prolificity",
+        "42": "Magick Archer: Ascendancy",
+        "43": "Magick Archer: Amelioration",
+        "44": "Trickster: Detection",
+        "45": "Trickster: Enlightenment",
+        "46": "Trickster: Fugacity",
+        "47": "Trickster: Obfuscation",
+        "48": "Trickster: Allure",
+        "49": "Warfarer: Zeal",
+        "50": "Warfarer: Dynamism"
+    },
+    "AugmentDescribtions": {
+        "4": "Increases the likelihood of being targeted by foes",
+        "5": "Augments your physical defense",
+        "6": "Enables you to carry additional weight",
+        "7": "Allows you to lift up and pin down foes longer",
+        "8": "Hastens recovery when downed and when crawling",
+        "9": "Increases damage dealt by your attacks when targets are not in battle stance",
+        "10": "Increases your maximum Stamina",
+        "11": "Causes your lantern to consume less oil and illuminate larger area",
+        "12": "Increases damage dealt when striking a target's vitals",
+        "13": "Enables you to clamber up cliffs and scale foes and other surfaces faster",
+        "14": "Augments your Magick Defense",
+        "15": "Increases the amount of Health recovered by curatives and curative magicks",
+        "16": "Reduces the duration of debilitations you are afflicted with",
+        "17": "Extends the duration of enchantments and invigorations",
+        "18": "Augments your Stamina recovery speed",
+        "19": "Decreases the likelihood of being targeted by foes",
+        "20": "Slightly restores Health when you deliver a killing blow to a foe",
+        "21": "Reduces the Stamina consumed when struggling in a foe's grip",
+        "22": "Reduces the Stamina consumed when clinging to or pinning down foes",
+        "23": "Augments your Strength",
+        "24": "Increases your maximum Health",
+        "25": "Improves your ability to push and pull targets when grabbing hold",
+        "26": "Improves your ability to break through an opponent's guard",
+        "27": "Augments your Knockdown Power",
+        "28": "Reduces cumulation of the loss gauge when receiving damage",
+        "29": "Increases the likelihood of inflicting debilitations with your attacks",
+        "30": "Reduces the rate at which items deteriorate",
+        "31": "Augments your Knockdown Resistance",
+        "32": "Increases damage dealt when exploiting a hostile target's elemental weakness",
+        "33": "Augments your Magick",
+        "34": "Hastens movement speed while carrying or lifting",
+        "35": "Increases gold obtained when acquiring coin pouches",
+        "36": "Augments your Strength during the day and your Magick at night",
+        "37": "Increases the amount of rift crystals obtained when acquiring rift fragments and the like",
+        "38": "Reduces Stamina consumed while dashing",
+        "39": "Augments the physical Defense and Magick Defense of pawns in your party",
+        "40": "Recovers Stamina when you deliver the killing blow to a target",
+        "41": "Increases the likelihood that smaller targets will drop items",
+        "42": "Augments the Strength and Magick of pawns in your party",
+        "43": "Reduces the amount of time taken for fallen pawns to revive",
+        "44": "Alerts you to the presence of any Seeker's Tokens or Wakestone shards in the vicinity with sound and blinking light",
+        "45": "You have a chance of creating one more of the resulting product when combining materials",
+        "46": "Decreases the likelihood of being beset by hostile targets while camping or riding in an oxcart",
+        "47": "Decreases the likelihood that hostile targets will detect you when you are not in battle stance",
+        "48": "Enables you to raise your affinity with people more easily",
+        "49": "Reduces the Stamina consumed when performing a weapon skill",
+        "50": "Reduces the amount by which weight affects your movement speed"
+    },
+    "AugmentModDescriptions": {
+        "4": "Increases the likelihood of being targeted by foes by [%f * Agression].",
+        "5": "Augments your physical defense by %f + %f%%.",
+        "6": "Enables you to carry %f kg of additional weight.",
+        "7": "Allows you to lift up[%fs] and pin down[%fs] foes longer.",
+        "8": "Hastens recovery by %f seconds when downed and %f second when crawling.",
+        "9": "Increases damage dealt by your attacks by [%f%% * DMG] when targets are not in battle stance.",
+        "10": "Increases your maximum Stamina by %f.",
+        "11": "Causes your lantern to consume a [Consumtion * %f] and illuminate x[%f] the area.",
+        "12": "Increases damage dealt by [Damage + (Damage * %f)] when striking a target's vitals.",
+        "13": "Enables you to clamber up cliffs[Speed * (Spped * %f)] and scale foes and other surfaces[Speed * (Spped * %f)] faster.",
+        "14": "Augments your Magick Defense by %f + %f%%.",
+        "15": "Increases the amount of Health recovered by curatives and curative magicks by %f%%.",
+        "16": "Reduces the duration of debilitations you are afflicted with [Debilitations * %f].",
+        "17": "Extends the duration of enchantments and invigorations [Duration * %f].",
+        "18": "Augments your Stamina recovery speed [Speed + (Speed * %f)].",
+        "19": "Decreases the likelihood of being targeted by foes [%f * Agression].",
+        "20": "Slightly restores [%f-%f%%] Health when you deliver a killing blow to a foe.",
+        "21": "Reduces the Stamina consumed when struggling in a foe's grip [Consumtion: Consumtion * %f].",
+        "22": "Reduces the Stamina consumed when clinging to or pinning down foes [Consumtion: Consumtion * %f].",
+        "23": "Augments your Strength by %f + %f%%.",
+        "24": "Increases your maximum Health by %f.",
+        "25": "Improves your ability to push and pull targets when grabbing hold. [Efficency * %f].",
+        "26": "Improves your ability to break through an opponent's guard by %f.",
+        "27": "Augments your Knockdown Power by %f%%.",
+        "28": "Reduces cumulation of the loss gauge when receiving damage [Damage * %f].",
+        "29": "Increases the likelihood of inflicting debilitations with your attacks by %f%%.",
+        "30": "Reduces the rate at which items deteriorate [Unsure %f, %f].",
+        "31": "Augments your Knockdown Resistance by %f%%.",
+        "32": "Increases damage dealt when exploiting a hostile target's elemental weakness by %f%%.",
+        "33": "Augments your Magick by %f + %f%%.",
+        "34": "Hastens movement speed while carrying or lifting by [Speed * %f].",
+        "35": "Increases gold obtained when acquiring coin pouches [Gold * %f].",
+        "36": "Augments your Strength during the day and your Magick at night  by %f + %f%%.",
+        "37": "Increases the amount of rift crystals obtained when acquiring rift fragments and the like [Crystals * %f].",
+        "38": "Reduces Stamina consumed while dashing [Consumtion * %f]",
+        "39": "Augments the physical Defense and Magick Defense of pawns in your party by %f + %f%%",
+        "40": "Recovers %f%% Stamina when you deliver the killing blow to a target.",
+        "41": "Increases the likelihood that smaller targets will drop items [Chance * %f].",
+        "42": "Augments the Strength and Magick of pawns in your party by %f + %f%%.",
+        "43": "Reduces the amount of time taken for fallen pawns to revive by %fs.",
+        "44": "Alerts you to the presence of any Seeker's Tokens or Wakestone shards in the vicinity with sound and blinking light [Unsure %f].",
+        "45": "You have a %f%% chance of creating one more of the resulting product when combining materials.",
+        "46": "Decreases the likelihood of being beset by hostile targets while camping or riding in an oxcart [Chance * %f].",
+        "47": "Decreases the likelihood that hostile targets will detect you when you are not in battle stance [Chance * %f].",
+        "48": "Enables you to raise your affinity with people more easily [Affinity Gain * %f].",
+        "49": "Reduces the Stamina consumed when performing a weapon skill [Consumtion * %f].",
+        "50": "Reduces the amount by which weight affects your movement speed by [%f Categories]"
+    },
+    "Augment_Overhual_Default_Settings": {
+        "4": {
+            "Value": 2.0,
+            "Value2": 0.0
+        },
+        "5": {
+            "Value": 45.0,
+            "Value2": 30.0
+        },
+        "6": {
+            "Value": 10.0,
+            "Value2": 0.0
+        },
+        "7": {
+            "Value": 2.0,
+            "Value2": 2.0
+        },
+        "8": {
+            "Value": 0.30000001192092896,
+            "Value2": 1.0
+        },
+        "9": {
+            "Value": 0.10000000149011612,
+            "Value2": 0.0
+        },
+        "10": {
+            "Value": 150.0,
+            "Value2": 0.0
+        },
+        "11": {
+            "Value": 0.6600000262260437,
+            "Value2": 2.0
+        },
+        "12": {
+            "Value": 0.05000000074505806,
+            "Value2": 0.0
+        },
+        "13": {
+            "Value": 1.100000023841858,
+            "Value2": 1.100000023841858
+        },
+        "14": {
+            "Value": 45.0,
+            "Value2": 30.0
+        },
+        "15": {
+            "Value": 10.0,
+            "Value2": 0.0
+        },
+        "16": {
+            "Value": 0.699999988079071,
+            "Value2": 0.0
+        },
+        "17": {
+            "Value": 1.2000000476837158,
+            "Value2": 0.0
+        },
+        "18": {
+            "Value": 0.10000000149011612,
+            "Value2": 0.0
+        },
+        "19": {
+            "Value": 0.8500000238418579,
+            "Value2": 0.0
+        },
+        "20": {
+            "Value": 4.0,
+            "Value2": 4.0
+        },
+        "21": {
+            "Value": 0.800000011920929,
+            "Value2": 0.0
+        },
+        "22": {
+            "Value": 0.8500000238418579,
+            "Value2": 0.0
+        },
+        "23": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "24": {
+            "Value": 200.0,
+            "Value2": 0.0
+        },
+        "25": {
+            "Value": 1.5,
+            "Value2": 0.0
+        },
+        "26": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "27": {
+            "Value": 15.0,
+            "Value2": 0.0
+        },
+        "28": {
+            "Value": 0.949999988079071,
+            "Value2": 0.0
+        },
+        "29": {
+            "Value": 20.0,
+            "Value2": 0.0
+        },
+        "30": {
+            "Value": 75.0,
+            "Value2": 90.0
+        },
+        "31": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "32": {
+            "Value": 5.0,
+            "Value2": 0.0
+        },
+        "33": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "34": {
+            "Value": 1.100000023841858,
+            "Value2": 0.0
+        },
+        "35": {
+            "Value": 1.0499999523162842,
+            "Value2": 0.0
+        },
+        "36": {
+            "Value": 0.0,
+            "Value2": 5.0
+        },
+        "37": {
+            "Value": 1.0499999523162842,
+            "Value2": 0.0
+        },
+        "38": {
+            "Value": 0.8999999761581421,
+            "Value2": 0.0
+        },
+        "39": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "40": {
+            "Value": 10.0,
+            "Value2": 0.0
+        },
+        "41": {
+            "Value": 1.2000000476837158,
+            "Value2": 0.0
+        },
+        "42": {
+            "Value": 30.0,
+            "Value2": 0.0
+        },
+        "43": {
+            "Value": 1.0,
+            "Value2": 0.0
+        },
+        "44": {
+            "Value": 1.5,
+            "Value2": 0.0
+        },
+        "45": {
+            "Value": 15.0,
+            "Value2": 0.0
+        },
+        "46": {
+            "Value": 0.3499999940395355,
+            "Value2": 0.0
+        },
+        "47": {
+            "Value": 0.8500000238418579,
+            "Value2": 0.0
+        },
+        "48": {
+            "Value": 1.100000023841858,
+            "Value2": 0.0
+        },
+        "49": {
+            "Value": 0.949999988079071,
+            "Value2": 0.0
+        },
+        "50": {
+            "Value": 1.0,
+            "Value2": 0.0
+        }
+    }
+}
