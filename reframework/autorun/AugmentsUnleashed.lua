@@ -23,6 +23,7 @@ local ModStrings = {
 	["PlayerToggle"] = "Player Augments",
 	["PawnToggle"] = "Pawn Augments",
 	["TargetSelect"] = "Editing",
+	["EquippedTooltip"] = "Already equipped in-game for the current vocation.",
 	["AugmentsMenuNote"] = "Any augments past the default amount will not show in the game's menus.\nClose & open the Pause Menu to update the Status menu.",
 	["AugmentsOverhualMenu"] = "Augments Overhual Menu",
 	["AugmentsOverhualMenu_Label_Stat"] = "Stat",
@@ -37,6 +38,13 @@ local dataAugmentsModDescribtion = {}
 local dataAugmentsPlayerEnabled = {}
 local dataAugmentsPawnEnabled = {}
 local dataDescriptiveMode = false
+
+local ABILITY_MIN = 4
+local ABILITY_MAX = 50
+-- The game's own augment slots (app.AbilityContext.AbilitySlot No0..No6). These are kept
+-- untouched; mod augments are written after them.
+local NATIVE_SLOT_COUNT = 7
+local ABILITY_ARRAY_SIZE = NATIVE_SLOT_COUNT + (ABILITY_MAX - ABILITY_MIN + 1)
 
 local App = {
     _version = "1.0"
@@ -84,12 +92,6 @@ local function GetPlayerHuman()
     return nil
 end
 
-local ABILITY_MIN = 4
-local ABILITY_MAX = 50
--- Augment N is written into slot N + ABILITY_SLOT_OFFSET of the equipped ability array.
-local ABILITY_SLOT_OFFSET = 2
-local ABILITY_ARRAY_SIZE = ABILITY_MAX + ABILITY_SLOT_OFFSET + 1
-
 local HumanParameter
 local function GetAbilitiesParam()
 	local characterManager = GetCharacterManager()
@@ -100,20 +102,24 @@ local function GetAbilitiesParam()
 	if abilityParam == nil then return nil end
 	local tempAbilitiesParam = {}
 	for i = ABILITY_MIN, ABILITY_MAX do
-		local param = abilityParam:call("getParam", i)
-		if param == nil then return nil end
-		tempAbilitiesParam[tostring(i)] = param
+		-- IDs the game has no parameter for are skipped rather than failing the whole setup.
+		local ok, param = pcall(abilityParam.call, abilityParam, "getParam", i)
+		if ok and param ~= nil then tempAbilitiesParam[tostring(i)] = param end
 	end
+	if next(tempAbilitiesParam) == nil then return nil end
 	return tempAbilitiesParam
 end
 
 local function CopyAbilitiesParam(copyParamTo)
 	if copyParamTo and next(AbilitiesParam) ~= nil then
 		for i = ABILITY_MIN, ABILITY_MAX do
-			copyParamTo[tostring(i)] = {
-				["Value"] = AbilitiesParam[tostring(i)]:get_field("Value"),
-				["Value2"] = AbilitiesParam[tostring(i)]:get_field("Value2")
-			}
+			local param = AbilitiesParam[tostring(i)]
+			if param then
+				copyParamTo[tostring(i)] = {
+					["Value"] = param:get_field("Value"),
+					["Value2"] = param:get_field("Value2")
+				}
+			end
 		end
 		return true
 	end
@@ -123,10 +129,11 @@ end
 local function UpdateAbilitiesParam(copyedParam)
 	if copyedParam and next(AbilitiesParam) ~= nil then
 		for i = ABILITY_MIN, ABILITY_MAX do
+			local param = AbilitiesParam[tostring(i)]
 			local entry = copyedParam[tostring(i)]
-			if entry then
-				if entry["Value"] ~= nil then AbilitiesParam[tostring(i)]:set_field("Value", entry["Value"]) end
-				if entry["Value2"] ~= nil then AbilitiesParam[tostring(i)]:set_field("Value2", entry["Value2"]) end
+			if param and type(entry) == "table" then
+				if entry["Value"] ~= nil then param:set_field("Value", entry["Value"]) end
+				if entry["Value2"] ~= nil then param:set_field("Value2", entry["Value2"]) end
 			end
 		end
 		return true
@@ -142,16 +149,19 @@ local function InitAbilitiesParam()
 	AbilitiesParam = params
 	CopyAbilitiesParam(AbilitiesParamDefault)
 	if next(AbilitiesParamMod) == nil then CopyAbilitiesParam(AbilitiesParamMod) end
-	-- Fill in any entries missing from an older or partial config.
+	-- Fill in any entries missing from an older or partial config (e.g. newly added augments).
 	for i = ABILITY_MIN, ABILITY_MAX do
 		local key = tostring(i)
-		local entry = AbilitiesParamMod[key]
-		if type(entry) ~= "table" then
-			entry = {}
-			AbilitiesParamMod[key] = entry
+		local default = AbilitiesParamDefault[key]
+		if default then
+			local entry = AbilitiesParamMod[key]
+			if type(entry) ~= "table" then
+				entry = {}
+				AbilitiesParamMod[key] = entry
+			end
+			if entry["Value"] == nil then entry["Value"] = default["Value"] end
+			if entry["Value2"] == nil then entry["Value2"] = default["Value2"] end
 		end
-		if entry["Value"] == nil then entry["Value"] = AbilitiesParamDefault[key]["Value"] end
-		if entry["Value2"] == nil then entry["Value2"] = AbilitiesParamDefault[key]["Value2"] end
 	end
 	if AugmentsOverhualEnabled then UpdateAbilitiesParam(AbilitiesParamMod) end
 	abilitiesParamInitialized = true
@@ -243,14 +253,15 @@ end
 local function createAbilityList(currentList)
 	local currentSize = getArraySize(currentList)
 	if currentSize <= 0 then return nil end
-	local size = math.max(ABILITY_ARRAY_SIZE, currentSize)
 	-- Do not chain :add_ref() here: it returns a plain REManagedObject and the
 	-- SystemArray methods (get_size, indexing) are lost.
-	local newList = sdk.create_managed_array("app.HumanAbilityID", size)
+	local newList = sdk.create_managed_array("app.HumanAbilityID", ABILITY_ARRAY_SIZE)
 	if newList == nil then return nil end
 	newList:add_ref()
-	if getArraySize(newList) ~= size then return nil end
-	for i = 0, currentSize - 1 do
+	if getArraySize(newList) ~= ABILITY_ARRAY_SIZE then return nil end
+	-- Only the native slots are copied, so a game-made copy of our array never feeds
+	-- previously injected augments back in as "equipped".
+	for i = 0, math.min(currentSize, NATIVE_SLOT_COUNT) - 1 do
 		setAbilityValue(newList, i, getAbilityValue(currentList, i))
 	end
 	return newList
@@ -258,8 +269,22 @@ end
 
 local function applyAugments(abilityList, enabledAugments)
 	for i = ABILITY_MIN, ABILITY_MAX do
-		setAbilityValue(abilityList, i + ABILITY_SLOT_OFFSET, enabledAugments[tostring(i)] and i or 0)
+		setAbilityValue(abilityList, NATIVE_SLOT_COUNT + (i - ABILITY_MIN), enabledAugments[tostring(i)] and i or 0)
 	end
+end
+
+-- Returns a set of augment IDs equipped through the game's own augment slots.
+local function getNativeEquipped(abilityContext, job)
+	local equipped = {}
+	if abilityContext == nil or job == nil then return equipped end
+	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
+	if currentEquiped == nil then return equipped end
+	local currentList = currentEquiped:get_field("Abilities")
+	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
+		local id = getAbilityValue(currentList, i)
+		if id ~= 0 then equipped[id] = true end
+	end
+	return equipped
 end
 
 local PlayerAbilityState = { list = nil, init = false }
@@ -354,6 +379,29 @@ end)
 local uiInputState = {}
 local resetInit = false
 local resetConfirm = false
+-- ImGuiHoveredFlags_AllowWhenDisabled (ImGui 1.92, not exposed as an enum by REFramework)
+local HOVERED_ALLOW_WHEN_DISABLED = 1 << 10
+local CROSS_COLOR = 0xFF3C3CE6 -- ABGR: red
+
+-- imgui.set_tooltip treats its text as a printf format string, so escape '%'.
+local function setTooltip(text)
+	ui.set_tooltip((tostring(text):gsub("%%", "%%%%")))
+end
+
+local function drawCross(x, y, size)
+	local inset = size * 0.25
+	local thickness = math.max(1.5, size * 0.12)
+	local left, top, right, bottom = x + inset, y + inset, x + size - inset, y + size - inset
+	ui.draw_list_path_clear()
+	ui.draw_list_path_line_to({ left, top })
+	ui.draw_list_path_line_to({ right, bottom })
+	ui.draw_list_path_stroke(CROSS_COLOR, false, thickness)
+	ui.draw_list_path_clear()
+	ui.draw_list_path_line_to({ right, top })
+	ui.draw_list_path_line_to({ left, bottom })
+	ui.draw_list_path_stroke(CROSS_COLOR, false, thickness)
+end
+
 re.on_draw_ui(function()
 	if ui.tree_node(ModStrings["ModName"]) then
 
@@ -390,6 +438,16 @@ re.on_draw_ui(function()
 			local isPawnTarget = SelectedTarget == 2
 			local enabledAugments = isPawnTarget and dataAugmentsPawnEnabled or dataAugmentsPlayerEnabled
 			local updateEquipedListTarget = isPawnTarget and updateEquipedListPawn or updateEquipedListPlayer
+			local okEquipped, nativeEquipped = pcall(function()
+				if isPawnTarget then return getNativeEquipped(GetPawnAbilityContext(), GetPawnJob()) end
+				return getNativeEquipped(GetPlayerAbilityContext(), GetPlayerJob())
+			end)
+			if not okEquipped or type(nativeEquipped) ~= "table" then nativeEquipped = {} end
+
+			-- Pin the box-to-label gap so equipped rows (box and label drawn separately) line up with the rest.
+			local labelGap = math.max(4, math.floor(ui.calc_text_size("X").y * 0.3))
+			local pushedInnerSpacing = Vector2f ~= nil
+			if pushedInnerSpacing then ui.push_style_var(ui.ImGuiStyleVar.ItemInnerSpacing, Vector2f.new(labelGap, labelGap)) end
 
 			-- Augments
 			for i = ABILITY_MIN, ABILITY_MAX do
@@ -397,16 +455,34 @@ re.on_draw_ui(function()
 				local description = dataAugmentsDescribtion[key]
 				local info = dataAugments[key] or ("Augment " .. key)
 				if dataDescriptiveMode and description then info = info .. " [" .. description .. "]" end
-				-- Option
 				if not enabledAugments[key] then enabledAugments[key] = false end
-				local changed, value = ui.checkbox(info, enabledAugments[key])
-				if description and ui.is_item_hovered() then ui.set_tooltip(description) end
-				if changed then
-					enabledAugments[key] = value
-					updateEquipedListTarget()
-					save()
+				if nativeEquipped[i] then
+					local tooltip = ModStrings["EquippedTooltip"]
+					if description then tooltip = tooltip .. "\n" .. description end
+					local boxPos = ui.get_cursor_screen_pos()
+					ui.begin_disabled()
+					ui.checkbox("##AugmentEquipped" .. key, false)
+					local hovered = ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
+					ui.same_line(0, 0)
+					-- A label-less checkbox is square, so the cursor now sits on its right edge.
+					local boxSize = ui.get_cursor_screen_pos().x - boxPos.x
+					ui.same_line(0, labelGap)
+					ui.text(info)
+					hovered = hovered or ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
+					ui.end_disabled()
+					drawCross(boxPos.x, boxPos.y, boxSize)
+					if hovered then setTooltip(tooltip) end
+				else
+					local changed, value = ui.checkbox(info, enabledAugments[key])
+					if description and ui.is_item_hovered() then setTooltip(description) end
+					if changed then
+						enabledAugments[key] = value
+						updateEquipedListTarget()
+						save()
+					end
 				end
 			end
+			if pushedInnerSpacing then ui.pop_style_var() end
 			ui.tree_pop()
 		end
 		
@@ -427,7 +503,7 @@ re.on_draw_ui(function()
 				else
 					UpdateAbilitiesParam(AbilitiesParamDefault)
 				end
-				for i = 4, 50 do
+				for i = ABILITY_MIN, ABILITY_MAX do
 					uiInputState[i][1] = false
 					uiInputState[i][2] = false
 				end
@@ -469,21 +545,25 @@ re.on_draw_ui(function()
 
 			if AugmentsOverhualEnabled then
 				-- Augments Active Mode
-				for i = 4,50 do
-					if ui.tree_node(dataAugments[tostring(i)]) then
+				for i = ABILITY_MIN, ABILITY_MAX do
+					local key = tostring(i)
+					-- Augments the game has no parameter for can't be tuned.
+					if AbilitiesParamDefault[key] and AbilitiesParamMod[key] and ui.tree_node((dataAugments[key] or ("Augment " .. key)) .. "##Overhaul" .. key) then
 						local description = "Description: "
 						local descriptionMod = "Mod Machienic: "
-						local modValue = AbilitiesParamMod[tostring(i)]["Value"]
-						local modValue2 = AbilitiesParamMod[tostring(i)]["Value2"]
-						local defaultValue = AbilitiesParamDefault[tostring(i)]["Value"]
-						local defaultValue2 = AbilitiesParamDefault[tostring(i)]["Value2"]
-						description = description .. dataAugmentsDescribtion[tostring(i)]
-						descriptionMod = string.format(descriptionMod .. dataAugmentsModDescribtion[tostring(i)], modValue, modValue2)
+						local modValue = AbilitiesParamMod[key]["Value"]
+						local modValue2 = AbilitiesParamMod[key]["Value2"]
+						local defaultValue = AbilitiesParamDefault[key]["Value"]
+						local defaultValue2 = AbilitiesParamDefault[key]["Value2"]
+						description = description .. (dataAugmentsDescribtion[key] or "-")
+						local modFormat = dataAugmentsModDescribtion[key] or "Stat [1]: %f, Stat [2]: %f"
+						local okFormat, formatted = pcall(string.format, descriptionMod .. modFormat, modValue, modValue2)
+						descriptionMod = okFormat and formatted or (descriptionMod .. modFormat)
 						ui.indent(20)
 						ui.text(description)
 						ui.text(descriptionMod)
 						local slideMax = 1000
-						if tonumber(defaultValue) < 3 then slideMax = 10 end
+						if (tonumber(defaultValue) or 0) < 3 then slideMax = 10 end
 						if imgui.small_button("T:1") then uiInputState[i][1] = not uiInputState[i][1] end
 						ui.same_line()
 						local changed, value = ui.slider_float(ModStrings["AugmentsOverhualMenu_Label_Stat"] .. " [1]", modValue, 0, slideMax)
@@ -504,7 +584,7 @@ re.on_draw_ui(function()
 							ui.unindent(36)
 						end
 						local slideMax = 1000
-						if tonumber(defaultValue) < 3 then slideMax = 10 end
+						if (tonumber(defaultValue) or 0) < 3 then slideMax = 10 end
 						if ui.small_button("T:2") then uiInputState[i][2] = not uiInputState[i][2] end
 						ui.same_line()
 						local changed, value = ui.slider_float(ModStrings["AugmentsOverhualMenu_Label_Stat"] .. " [2]", modValue2, 0, slideMax)
@@ -662,7 +742,7 @@ function App.Init()
 	InitAbilitiesParam()
 	
 	-- Populate Custom Typeing State
-	for i = 4, 50 do
+	for i = ABILITY_MIN, ABILITY_MAX do
 		uiInputState[i] = {
 			[1] = false,
 			[2] = false
