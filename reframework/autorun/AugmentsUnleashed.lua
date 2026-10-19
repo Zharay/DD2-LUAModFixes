@@ -8,8 +8,8 @@ local json = json
 local ui = imgui
 local dataPath = "AugmentsUnleashed.json"
 local configPath = "AugmentsUnleashedConfig.json"
-local PlayerSelected = true
-local PawnSelected = false
+-- 1 = Player, 2 = Pawn (index into the Augments Menu drop-list)
+local SelectedTarget = 1
 local AugmentsInfinityEnabled = false
 local AugmentsOverhualEnabled = false
 local AbilitiesParam = {}
@@ -20,8 +20,10 @@ local ModStrings = {
 	["ModName"] = "Augments Unleashed",
 	["AugmentsMenu"] = "Augments Menu",
 	["DiscriptiveMode"] = "Discriptive Mode",
-	["PlayerToggle"] = "Player's Enabled Augments",
-	["PawnToggle"] = "Pawn's Enabled Augments",
+	["PlayerToggle"] = "Player Augments",
+	["PawnToggle"] = "Pawn Augments",
+	["TargetSelect"] = "Editing",
+	["AugmentsMenuNote"] = "Any augments past the default amount will not show in the game's menus.\nClose & open the Pause Menu to update the Status menu.",
 	["AugmentsOverhualMenu"] = "Augments Overhual Menu",
 	["AugmentsOverhualMenu_Label_Stat"] = "Stat",
 	["AugmentsOverhualModeEnable"] = "Enable",
@@ -54,7 +56,7 @@ end
 
 local MainPawn
 local function GetMainPawn()
-	pawnMgr = GetPawnManager()
+	local pawnMgr = GetPawnManager()
 	if pawnMgr then
 		if MainPawn == nil then MainPawn = pawnMgr:call("get_MainPawn") end
 		return MainPawn
@@ -64,7 +66,7 @@ end
 
 local HumanPawn
 local function GetHumanPawn()
-	mainPawn = GetMainPawn()
+	local mainPawn = GetMainPawn()
 	if mainPawn then
 		if HumanPawn == nil then HumanPawn = mainPawn:call("get_CachedHuman") end
 		return HumanPawn
@@ -74,7 +76,7 @@ end
 
 local HumanPlayer
 local function GetPlayerHuman()
-    playerMgr = GetCharacterManager()
+    local playerMgr = GetCharacterManager()
     if playerMgr then
         if HumanPlayer == nil then HumanPlayer = playerMgr:call("get_ManualPlayerHuman()") end
 	    return HumanPlayer
@@ -82,21 +84,32 @@ local function GetPlayerHuman()
     return nil
 end
 
+local ABILITY_MIN = 4
+local ABILITY_MAX = 50
+-- Augment N is written into slot N + ABILITY_SLOT_OFFSET of the equipped ability array.
+local ABILITY_SLOT_OFFSET = 2
+local ABILITY_ARRAY_SIZE = ABILITY_MAX + ABILITY_SLOT_OFFSET + 1
+
 local HumanParameter
 local function GetAbilitiesParam()
-	HumanParameter = GetCharacterManager():call("get_HumanParam")
+	local characterManager = GetCharacterManager()
+	if characterManager == nil then return nil end
+	HumanParameter = characterManager:call("get_HumanParam")
+	if HumanParameter == nil then return nil end
 	local abilityParam = HumanParameter:call("get_Ability")
+	if abilityParam == nil then return nil end
 	local tempAbilitiesParam = {}
-	for i = 4, 50 do
-		tempAbilitiesParam[tostring(i)] = abilityParam:call("getParam", i)
+	for i = ABILITY_MIN, ABILITY_MAX do
+		local param = abilityParam:call("getParam", i)
+		if param == nil then return nil end
+		tempAbilitiesParam[tostring(i)] = param
 	end
 	return tempAbilitiesParam
 end
 
 local function CopyAbilitiesParam(copyParamTo)
-	if next(AbilitiesParam) == nil then AbilitiesParam = GetAbilitiesParam() end
-	if copyParamTo then
-		for i = 4, 50 do
+	if copyParamTo and next(AbilitiesParam) ~= nil then
+		for i = ABILITY_MIN, ABILITY_MAX do
 			copyParamTo[tostring(i)] = {
 				["Value"] = AbilitiesParam[tostring(i)]:get_field("Value"),
 				["Value2"] = AbilitiesParam[tostring(i)]:get_field("Value2")
@@ -108,44 +121,68 @@ local function CopyAbilitiesParam(copyParamTo)
 end
 
 local function UpdateAbilitiesParam(copyedParam)
-	if next(AbilitiesParam) == nil then AbilitiesParam = GetAbilitiesParam() end
-	if copyedParam then
-		for i = 4,50 do
-			AbilitiesParam[tostring(i)]:set_field("Value", copyedParam[tostring(i)]["Value"])
-			AbilitiesParam[tostring(i)]:set_field("Value2", copyedParam[tostring(i)]["Value2"])
+	if copyedParam and next(AbilitiesParam) ~= nil then
+		for i = ABILITY_MIN, ABILITY_MAX do
+			local entry = copyedParam[tostring(i)]
+			if entry then
+				if entry["Value"] ~= nil then AbilitiesParam[tostring(i)]:set_field("Value", entry["Value"]) end
+				if entry["Value2"] ~= nil then AbilitiesParam[tostring(i)]:set_field("Value2", entry["Value2"]) end
+			end
 		end
 		return true
 	end
 	return false
 end
 
+local abilitiesParamInitialized = false
+local function InitAbilitiesParam()
+	if abilitiesParamInitialized then return true end
+	local params = GetAbilitiesParam()
+	if params == nil then return false end
+	AbilitiesParam = params
+	CopyAbilitiesParam(AbilitiesParamDefault)
+	if next(AbilitiesParamMod) == nil then CopyAbilitiesParam(AbilitiesParamMod) end
+	-- Fill in any entries missing from an older or partial config.
+	for i = ABILITY_MIN, ABILITY_MAX do
+		local key = tostring(i)
+		local entry = AbilitiesParamMod[key]
+		if type(entry) ~= "table" then
+			entry = {}
+			AbilitiesParamMod[key] = entry
+		end
+		if entry["Value"] == nil then entry["Value"] = AbilitiesParamDefault[key]["Value"] end
+		if entry["Value2"] == nil then entry["Value2"] = AbilitiesParamDefault[key]["Value2"] end
+	end
+	if AugmentsOverhualEnabled then UpdateAbilitiesParam(AbilitiesParamMod) end
+	abilitiesParamInitialized = true
+	return true
+end
+
 local JobManagerPawn
 local function GetPawnJob()
-	local JobPlayer
-	pawnHuman = GetHumanPawn()
+	local pawnHuman = GetHumanPawn()
 	if pawnHuman then
 		if JobManagerPawn == nil then JobManagerPawn = pawnHuman:get_field("<JobContext>k__BackingField") end
-		JobPlayer = JobManagerPawn:get_field("CurrentJob")
-		return JobPlayer
+		if JobManagerPawn == nil then return nil end
+		return JobManagerPawn:get_field("CurrentJob")
 	end
 	return nil
 end
 
 local JobManagerPlayer
 local function GetPlayerJob()
-	local JobPlayer
-	playerHuman = GetPlayerHuman()
+	local playerHuman = GetPlayerHuman()
 	if playerHuman then
 		if JobManagerPlayer == nil then JobManagerPlayer = playerHuman:get_field("<JobContext>k__BackingField") end
-		JobPlayer = JobManagerPlayer:get_field("CurrentJob")
-		return JobPlayer
+		if JobManagerPlayer == nil then return nil end
+		return JobManagerPlayer:get_field("CurrentJob")
 	end
 	return nil
 end
 
 local PawnAbilityContext
 local function GetPawnAbilityContext()
-    pawnHuman = GetHumanPawn()
+    local pawnHuman = GetHumanPawn()
     if pawnHuman then
         if PawnAbilityContext == nil then PawnAbilityContext = pawnHuman:call("get_AbilityContext()") end
 	    return PawnAbilityContext
@@ -155,7 +192,7 @@ end
 
 local PlayerAbilityContext
 local function GetPlayerAbilityContext()
-    playerHuman = GetPlayerHuman()
+    local playerHuman = GetPlayerHuman()
     if playerHuman then
         if PlayerAbilityContext == nil then PlayerAbilityContext = playerHuman:call("get_AbilityContext()") end
 	    return PlayerAbilityContext
@@ -175,86 +212,90 @@ local function isPlayer(target)
 	return false
 end
 
-local PlayerAbilityList
-local initPlayerAbilityList = false
--- local PlayerCurrentAbilityList
-local function updateEquipedListPlayer()
-	local playerAbilityContext = GetPlayerAbilityContext()
-	local jobPlayer = GetPlayerJob()
-	local tempAbilityList
-	local PlayerCurrentAbilityList
-	if PlayerAbilityList == nil then PlayerAbilityList = sdk.create_managed_array("app.HumanAbilityID", 53):add_ref() end
-	-- Problem when array being create, try again.
-	if PlayerAbilityList ~= nil then
-		if PlayerAbilityList:get_size() ~= 53 then
-			-- PlayerAbilityList:release()
-			PlayerAbilityList = nil
-		end
-	end
-	if PlayerAbilityList ~= nil and playerAbilityContext and jobPlayer then
-		-- if PlayerCurrentAbilityList == nil then PlayerCurrentAbilityList = playerAbilityContext:call("getEquipAbilityList", jobPlayer) end
-		PlayerCurrentAbilityList = playerAbilityContext:call("getEquipAbilityList", jobPlayer)
-		if not initPlayerAbilityList then
-			-- Populate PlayerAbilityList
-			tempAbilityList = PlayerCurrentAbilityList:get_field("Abilities")
-			for key, value in pairs(tempAbilityList) do
-				PlayerAbilityList[key] = value:get_field("value__")
-			end
-			for i = 4,50 do
-				if dataAugmentsPlayerEnabled[tostring(i)] then
-					PlayerAbilityList[i+2] = i
-				else
-					PlayerAbilityList[i+2] = 0
-				end
-			end
-			initPlayerAbilityList = true
-		end
-		PlayerCurrentAbilityList:set_field("Abilities", PlayerAbilityList)
-		return true
-	end
-	return false
+local function getArraySize(arr)
+	if arr == nil then return 0 end
+	local ok, size = pcall(function() return arr:get_size() end)
+	if ok and type(size) == "number" then return size end
+	ok, size = pcall(function() return arr:call("get_Length") end)
+	if ok and type(size) == "number" then return size end
+	return 0
 end
 
-local PawnAbilityList
-local initPawnAbilityList = false
--- local PawnCurrentAbilityList
-local function updateEquipedListPawn()
-	local pawnAbilityContext = GetPawnAbilityContext()
-	local jobPawn = GetPawnJob()
-	local tempAbilityList
-	local PawnCurrentAbilityList
+local function getAbilityValue(arr, index)
+	local value = arr:call("Get", index)
+	if type(value) == "userdata" then value = value:get_field("value__") end
+	return tonumber(value) or 0
+end
 
-	if PawnAbilityList == nil then PawnAbilityList = sdk.create_managed_array("app.HumanAbilityID", 53):add_ref() end
-	-- Problem when array being create, try again.
-	if PawnAbilityList ~= nil then
-		if PawnAbilityList:get_size() ~= 53 then
-			-- PawnAbilityList:release()
-			PawnAbilityList = nil
-		end
+-- Use the typed HumanAbilityID[]::Set instead of arr[i] = v, which no longer works for
+-- value-type arrays in current REFramework builds.
+local function setAbilityValue(arr, index, value)
+	arr:call("Set", index, value)
+end
+
+local function getAddress(obj)
+	if obj == nil then return nil end
+	local ok, address = pcall(function() return obj:get_address() end)
+	if ok then return address end
+	return nil
+end
+
+local function createAbilityList(currentList)
+	local currentSize = getArraySize(currentList)
+	if currentSize <= 0 then return nil end
+	local size = math.max(ABILITY_ARRAY_SIZE, currentSize)
+	-- Do not chain :add_ref() here: it returns a plain REManagedObject and the
+	-- SystemArray methods (get_size, indexing) are lost.
+	local newList = sdk.create_managed_array("app.HumanAbilityID", size)
+	if newList == nil then return nil end
+	newList:add_ref()
+	if getArraySize(newList) ~= size then return nil end
+	for i = 0, currentSize - 1 do
+		setAbilityValue(newList, i, getAbilityValue(currentList, i))
 	end
-	if PawnAbilityList ~= nil and pawnAbilityContext and jobPawn then
-		-- if PawnCurrentAbilityList == nil then PawnCurrentAbilityList = pawnAbilityContext:call("getEquipAbilityList", jobPawn) end
-		PawnCurrentAbilityList = pawnAbilityContext:call("getEquipAbilityList", jobPawn)
-		if not initPawnAbilityList then
-			-- Populate PawnAbilityList
-			tempAbilityList = PawnCurrentAbilityList:get_field("Abilities")
-			local index = 0
-			for key, value in pairs(tempAbilityList) do
-				PawnAbilityList[key] = value:get_field("value__")
-			end
-			for i = 4,50 do
-				if dataAugmentsPawnEnabled[tostring(i)] then
-					PawnAbilityList[i+2] = i
-				else
-					PawnAbilityList[i+2] = 0
-				end
-			end
-			initPawnAbilityList = true
-		end
-		PawnCurrentAbilityList:set_field("Abilities", PawnAbilityList)
-		return true
+	return newList
+end
+
+local function applyAugments(abilityList, enabledAugments)
+	for i = ABILITY_MIN, ABILITY_MAX do
+		setAbilityValue(abilityList, i + ABILITY_SLOT_OFFSET, enabledAugments[tostring(i)] and i or 0)
 	end
-	return false
+end
+
+local PlayerAbilityState = { list = nil, init = false }
+local PawnAbilityState = { list = nil, init = false }
+
+local function resetAbilityState(state)
+	state.list = nil
+	state.init = false
+end
+
+-- Swaps the character's equipped ability array for one with the enabled augments added.
+-- When onlyIfStale is set, nothing is done if our array is already in place.
+local function updateEquipedList(state, abilityContext, job, enabledAugments, onlyIfStale)
+	if abilityContext == nil or job == nil then return false end
+	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
+	if currentEquiped == nil then return false end
+	local currentList = currentEquiped:get_field("Abilities")
+	local isOurList = state.init and state.list ~= nil and getAddress(currentList) == getAddress(state.list)
+	if onlyIfStale and isOurList then return true end
+	if not isOurList then
+		local newList = createAbilityList(currentList)
+		if newList == nil then return false end
+		state.list = newList
+		state.init = true
+	end
+	applyAugments(state.list, enabledAugments)
+	if not isOurList then currentEquiped:set_field("Abilities", state.list) end
+	return true
+end
+
+local function updateEquipedListPlayer(onlyIfStale)
+	return updateEquipedList(PlayerAbilityState, GetPlayerAbilityContext(), GetPlayerJob(), dataAugmentsPlayerEnabled, onlyIfStale)
+end
+
+local function updateEquipedListPawn(onlyIfStale)
+	return updateEquipedList(PawnAbilityState, GetPawnAbilityContext(), GetPawnJob(), dataAugmentsPawnEnabled, onlyIfStale)
 end
 
 local PawnID
@@ -297,19 +338,13 @@ end, function()
 	PawnAbilityContext = nil
 	PlayerID = nil
 	PawnID = nil
-	-- PlayerAbilityList:release()
-	-- PawnAbilityList:release()
-	PlayerAbilityList = nil
-	PawnAbilityList = nil
-	-- PlayerCurrentAbilityList = nil
-	-- PawnCurrentAbilityList = nil
-	initPawnAbilityList = false
-	initPlayerAbilityList = false
+	resetAbilityState(PlayerAbilityState)
+	resetAbilityState(PawnAbilityState)
 end)
 
 re.on_script_reset(function()
 	-- Addressed user reset mid game
-	if next(AbilitiesParamDefault) == nill then UpdateAbilitiesParam(AbilitiesParamDefault) end
+	if abilitiesParamInitialized and next(AbilitiesParamDefault) ~= nil then UpdateAbilitiesParam(AbilitiesParamDefault) end
 end)
 
 re.on_config_save(function()
@@ -331,69 +366,45 @@ re.on_draw_ui(function()
 				-- save()
 			-- end
 			
-			local changed, value = ui.checkbox(ModStrings["DiscriptiveMode"], dataDescriptiveMode)
-			if changed then
-				dataDescriptiveMode = value
-				save()
-			end
-			
-			if PlayerSelected then
-				local changed, value = ui.checkbox(ModStrings["PlayerToggle"], PlayerSelected)
-				if changed then
-					PlayerSelected = value
-					PawnSelected = not value
-					save()
-				end
+			ui.text_colored(ModStrings["AugmentsMenuNote"], 0xFF00D7FF)
+			ui.separator()
 
-				-- Augments 
-				for i = 4,50 do
-					-- Description
-					local info = dataAugments[tostring(i)]
-					if dataDescriptiveMode then info = info .. " [" .. dataAugmentsDescribtion[tostring(i)] .. "]" end
-					-- Option
-					if not dataAugmentsPlayerEnabled[tostring(i)] then dataAugmentsPlayerEnabled[tostring(i)] = false end
-					local changed, value = ui.checkbox(info, dataAugmentsPlayerEnabled[tostring(i)])
-					if changed then
-						dataAugmentsPlayerEnabled[tostring(i)] = value
-						if PlayerAbilityList == nil then updateEquipedListPlayer() end
-						if dataAugmentsPlayerEnabled[tostring(i)] then
-							PlayerAbilityList[i+2] = i
-						else
-							PlayerAbilityList[i+2] = 0
-						end
-						updateEquipedListPlayer()
-						save()
-					end
-				end
-			end
-			
-			if PawnSelected then
-				local changed, value = ui.checkbox(ModStrings["PawnToggle"], PawnSelected)
-				if changed then
-					PawnSelected = value
-					PlayerSelected = not value
-					save()
-				end
+			-- local changed, value = ui.checkbox(ModStrings["DiscriptiveMode"], dataDescriptiveMode)
+			-- if changed then
+			-- 	dataDescriptiveMode = value
+			-- 	save()
+			-- end
 
-				-- Augments 
-				for i = 4,50 do
-					-- Description
-					local info = dataAugments[tostring(i)]
-					if dataDescriptiveMode then info = info .. " [" .. dataAugmentsDescribtion[tostring(i)] .. "]" end
-					-- Option
-					if not dataAugmentsPawnEnabled[tostring(i)] then dataAugmentsPawnEnabled[tostring(i)] = false end
-					local changed, value = ui.checkbox(info, dataAugmentsPawnEnabled[tostring(i)])
-					if changed then
-						dataAugmentsPawnEnabled[tostring(i)] = value
-						if PawnAbilityList == nil then updateEquipedListPawn() end
-						if dataAugmentsPawnEnabled[tostring(i)] then
-							PawnAbilityList[i+2] = i
-						else
-							PawnAbilityList[i+2] = 0
-						end
-						updateEquipedListPawn()
-						save()
-					end
+			local targetOptions = { ModStrings["PlayerToggle"], ModStrings["PawnToggle"] }
+			local comboTextWidth, comboTextHeight = 0, 0
+			for _, option in ipairs(targetOptions) do
+				local size = ui.calc_text_size(option)
+				if size.x > comboTextWidth then comboTextWidth = size.x end
+				if size.y > comboTextHeight then comboTextHeight = size.y end
+			end
+			-- Widest option + arrow button (roughly square, scales with font) + frame padding.
+			ui.set_next_item_width(comboTextWidth + comboTextHeight + 22)
+			local targetChanged, targetValue = ui.combo(ModStrings["TargetSelect"], SelectedTarget, targetOptions)
+			if targetChanged then SelectedTarget = targetValue end
+
+			local isPawnTarget = SelectedTarget == 2
+			local enabledAugments = isPawnTarget and dataAugmentsPawnEnabled or dataAugmentsPlayerEnabled
+			local updateEquipedListTarget = isPawnTarget and updateEquipedListPawn or updateEquipedListPlayer
+
+			-- Augments
+			for i = ABILITY_MIN, ABILITY_MAX do
+				local key = tostring(i)
+				local description = dataAugmentsDescribtion[key]
+				local info = dataAugments[key] or ("Augment " .. key)
+				if dataDescriptiveMode and description then info = info .. " [" .. description .. "]" end
+				-- Option
+				if not enabledAugments[key] then enabledAugments[key] = false end
+				local changed, value = ui.checkbox(info, enabledAugments[key])
+				if description and ui.is_item_hovered() then ui.set_tooltip(description) end
+				if changed then
+					enabledAugments[key] = value
+					updateEquipedListTarget()
+					save()
 				end
 			end
 			ui.tree_pop()
@@ -404,6 +415,9 @@ re.on_draw_ui(function()
 		
 		-- Augments Overhual Menu
 		if ui.tree_node(ModStrings["AugmentsOverhualMenu"]) then
+			if not InitAbilitiesParam() then
+				ui.text("Augment parameters are not available yet. Load into the game first.")
+			else
 			
 			local changed, value = ui.checkbox(ModStrings["AugmentsOverhualModeEnable"], AugmentsOverhualEnabled)
 			if changed then
@@ -454,7 +468,6 @@ re.on_draw_ui(function()
 			end
 
 			if AugmentsOverhualEnabled then
-				if next(AbilitiesParam) == nil then AbilitiesParam = GetAbilitiesParam() end
 				-- Augments Active Mode
 				for i = 4,50 do
 					if ui.tree_node(dataAugments[tostring(i)]) then
@@ -480,7 +493,7 @@ re.on_draw_ui(function()
 						end
 						if uiInputState[i][1] then
 							ui.indent(36)
-							local changed, value, _, __ = ui.input_text("", modValue)
+							local changed, value, _, __ = ui.input_text("##AugmentStat1", tostring(modValue))
 							if changed then
 								value = tonumber(value)
 								if value then
@@ -501,7 +514,7 @@ re.on_draw_ui(function()
 						end
 						if uiInputState[i][2] then
 							ui.indent(36)
-							local changed, value2, _, __ = ui.input_text("", modValue2)
+							local changed, value2, _, __ = ui.input_text("##AugmentStat2", tostring(modValue2))
 							if changed then
 								value2 = tonumber(value2)
 								if value2 then
@@ -515,6 +528,7 @@ re.on_draw_ui(function()
 						ui.tree_pop()
 					end
 				end
+			end
 			end
 			ui.tree_pop()
 		end
@@ -531,29 +545,37 @@ end)
 
 sdk.hook(sdk.find_type_definition("app.PlayerStatusCalculatorParameter"):get_method("getJobStatusParam"),
 function (args)
-	if not initPlayerAbilityList then updateEquipedListPlayer() end
-	if not initPawnAbilityList then updateEquipedListPawn() end
+	if not abilitiesParamInitialized then InitAbilitiesParam() end
+	updateEquipedListPlayer(true)
+	updateEquipedListPawn(true)
 end, nil)
 
 
--- Vocation switching handling.
+-- Vocation switching handling. Handled after the original runs so CurrentJob is already the new vocation.
+local jobChangedTarget
 sdk.hook(sdk.find_type_definition("app.JobContext"):get_method("setJobChanged(app.Character.JobEnum)"),
 function (args)
-	local target = sdk.to_managed_object(args[2])
-	-- print(tostring(target))
-	-- print(tostring(GetPlayerHuman():get_field("<JobContext>k__BackingField")))
-	if target == GetPlayerHuman():get_field("<JobContext>k__BackingField") then
-		-- print("Is Player")
-		initPlayerAbilityList = false
-		PlayerAbilityList = nil
+	jobChangedTarget = sdk.to_managed_object(args[2])
+end, function (retval)
+	local target = jobChangedTarget
+	jobChangedTarget = nil
+	local targetAddress = getAddress(target)
+	if targetAddress == nil then return retval end
+
+	local playerHuman = GetPlayerHuman()
+	if playerHuman and getAddress(playerHuman:get_field("<JobContext>k__BackingField")) == targetAddress then
+		resetAbilityState(PlayerAbilityState)
 		updateEquipedListPlayer()
-	else
-		-- print("Is MainPawn")
-		initPawnAbilityList = false
-		PawnAbilityList = nil
+		return retval
+	end
+
+	local pawnHuman = GetHumanPawn()
+	if pawnHuman and getAddress(pawnHuman:get_field("<JobContext>k__BackingField")) == targetAddress then
+		resetAbilityState(PawnAbilityState)
 		updateEquipedListPawn()
 	end
-end, nil)
+	return retval
+end)
 
 -- local isAugmented = false
 -- local currentAbilityID
@@ -584,7 +606,7 @@ function App.Init()
 	local config = {}
 	print("Augments Unleashed Initilization!")
 	-- Loading Data
-	data = json.load_file(dataPath)
+	data = json.load_file(dataPath) or {}
 	for key, value in pairs(data) do
 		if key == "Augments" then
 			dataAugments = data["Augments"]
@@ -625,7 +647,7 @@ function App.Init()
 				dataAugmentsPawnEnabled = config["Pawn"]
 			end
 			if key == "DescriptiveMode" then
-				dataAugmentsDescribtive = config["DescriptiveMode"]
+				dataDescriptiveMode = config["DescriptiveMode"]
 			end
 			if key == "AugmentsOverhualSettings" then
 				AbilitiesParamMod = config["AugmentsOverhualSettings"]
@@ -636,11 +658,8 @@ function App.Init()
 		end
 	end
 	
-	-- Augments Init
-	AbilitiesParam = GetAbilitiesParam()
-	CopyAbilitiesParam(AbilitiesParamDefault)
-	if next(AbilitiesParamMod) == nill then CopyAbilitiesParam(AbilitiesParamMod) end
-	if AugmentsOverhualEnabled then UpdateAbilitiesParam(AbilitiesParamMod) end
+	-- Augments Init (retried later from the hooks/UI if the game isn't ready yet)
+	InitAbilitiesParam()
 	
 	-- Populate Custom Typeing State
 	for i = 4, 50 do

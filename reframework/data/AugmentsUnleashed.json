@@ -3,14 +3,15 @@
         "Name": "Augments Unleashed",
         "AugmentsMenu": "Augments Menu",
         "DiscriptiveMode": "Discriptive Mode",
-        "PlayerToggle": "Player's Enabled Augments",
-        "PawnToggle": "Pawn's Enabled Augments",
+        "PlayerToggle": "Player Augments",
+        "PawnToggle": "Pawn Augments",
 		"AugmentsOverhualMenu": "Augments Overhual Menu",
 		"AugmentsOverhualMenu_Label_Stat": "Stat",
 		"AugmentsOverhualModeEnable": "Enable",
 		"AugmentsOverhualModeSave": "Save",
 		"AugmentsOverhualModeReset": "Reset",
-		"AugmentsOverhualModeResetWarning": "I know all my custom augments overhual will reset to default."
+		"AugmentsOverhualModeResetWarning": "I know all my custom augments overhual will reset to default.",
+        "AugmentsMenuNote": "Any augments past the default amount will not show in the game's menus.\nClose & open the Pause Menu to update the Status menu."
     },
     "Augments": {
         "4": "Fighter: Provocation",
