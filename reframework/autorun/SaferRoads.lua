@@ -26,23 +26,61 @@ end
 
 local settings = recurse_def_settings(json.load_file("safer_roads/mysettings.json") or {}, default_settings)
 
-local function save_settings()
-    json.dump_file("safer_roads/mysettings.json", settings)
-    applySettings()
+local apply_pending = true
+local apply_status
+local save_error
+
+local function wait_for_game(message)
+    if apply_status ~= message then
+        log.warn("[Safer Roads] " .. message)
+    end
+    apply_status = message
 end
 
 local function applySettings()
     local genManager = sdk.get_managed_singleton("app.GenerateManager")
-    local genDefaultParam = genManager._GenerateDefaultParam
-    local deadCharaTime = genDefaultParam._DeadCharaTime
-    local dungeonDeadCharaTime = genDefaultParam._DungeonDeadCharaTime
+    if not genManager then
+        wait_for_game("Waiting for GenerateManager; settings will apply automatically.")
+        return
+    end
+    local genDefaultParam = genManager:get_field("_GenerateDefaultParam")
+    if not genDefaultParam then
+        wait_for_game("Waiting for generation parameters; settings will apply automatically.")
+        return
+    end
+    local deadCharaTime = genDefaultParam:get_field("_DeadCharaTime")
+    local dungeonDeadCharaTime = genDefaultParam:get_field("_DungeonDeadCharaTime")
+    if not deadCharaTime or not dungeonDeadCharaTime then
+        wait_for_game("Waiting for respawn parameters; settings will apply automatically.")
+        return
+    end
 
-    deadCharaTime._NormalCharaTIme = settings.isNotDungeon.normalEnemies
-    deadCharaTime._BossCharaTime = settings.isNotDungeon.bossEnemies
-    dungeonDeadCharaTime._NormalCharaTIme = settings.isDungeon.normalEnemies
-    dungeonDeadCharaTime._BossCharaTime = settings.isDungeon.bossEnemies
+    -- The current SDK spells the normal-enemy field with a capital I in TIme.
+    deadCharaTime:set_field("_NormalCharaTIme", settings.isNotDungeon.normalEnemies)
+    deadCharaTime:set_field("_BossCharaTime", settings.isNotDungeon.bossEnemies)
+    dungeonDeadCharaTime:set_field("_NormalCharaTIme", settings.isDungeon.normalEnemies)
+    dungeonDeadCharaTime:set_field("_BossCharaTime", settings.isDungeon.bossEnemies)
+    apply_pending = false
+    apply_status = nil
 end
 
+local function save_settings()
+    if not json.dump_file("safer_roads/mysettings.json", settings) then
+        save_error = "Unable to save settings; settings were not applied."
+        log.error("[Safer Roads] " .. save_error)
+        return
+    end
+    save_error = nil
+    apply_pending = true
+    applySettings()
+end
+
+-- Autorun can execute before the game's generation parameters are initialized.
+re.on_frame(function ()
+    if apply_pending then
+        applySettings()
+    end
+end)
 
 re.on_draw_ui(function ()
   if imgui.tree_node("Safer Roads") then
@@ -56,6 +94,12 @@ re.on_draw_ui(function ()
     if imgui.button("Restore Default Settings") then
         settings = recurse_def_settings({}, default_settings)
         save_settings()
+    end
+    if save_error then
+        imgui.text(save_error)
+    end
+    if apply_status then
+        imgui.text(apply_status)
     end
     imgui.tree_pop()
   end
