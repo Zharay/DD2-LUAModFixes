@@ -64,15 +64,6 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 - Hotkey activation comes with a default delay of 0.25 seconds for taps. This is to make it compatible with mods that adds dodges and other double-tap commands.
 - Because of above changes, this mod now requires [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)
 
-### [ItemHalfWeight](https://www.nexusmods.com/dragonsdogma2/mods/141) by [NekoNekoYukari](https://www.nexusmods.com/dragonsdogma2/users/130442123)
-- Uses updated item enumerators
-- Now waits for item data to be available instead of assuming it'd be available at boot
-- Should the game rebuild its item details, this will reapply
-- Restores changes after any manual script resets
-- Item now rounds down to fit Int16 units that the game uses
-- Added actual logs for success or failure
-- Renamed the file to `ItemHalfWeight`.
-
 ### [Safer Roads](https://www.nexusmods.com/dragonsdogma2/mods/598) by [Grendel](https://www.nexusmods.com/profile/ImmortanJoel/mods?gameId=6234)
 - Updated the script to latest REFramework
 - Main issue (applySettings) was a simple LUA scoping problem

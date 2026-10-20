@@ -97,9 +97,6 @@ jobs:
           make_zip SlowerBowAiming \
             reframework/autorun/SlowerBowAiming.lua
 
-          make_zip ItemHalfWeight \
-            reframework/autorun/ItemHalfWeight.lua
-
           make_zip SaferRoads \
             reframework/autorun/SaferRoads.lua
           
