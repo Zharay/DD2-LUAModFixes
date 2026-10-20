@@ -138,8 +138,33 @@ local function setAppSpeed(spd, _step, _base)
 
 end
 
+local stopHotkeySlowAim
+
+local function sameObject(a, b)
+    return a ~= nil and b ~= nil and a:get_address() == b:get_address()
+end
+
+-- The game can replace the player (load, death, area transition). Cached references would then
+-- point at the old objects and aiming would never be detected again until a script reset.
+local function isPlayerStale()
+    _CharacterManager = sdk.get_managed_singleton("app.CharacterManager")
+    if not _CharacterManager then return true end
+    local character = sdk.to_managed_object(_CharacterManager:get_ManualPlayer())
+    if not sameObject(character, _Character) then return true end
+    local inputProcessor = _Player and sdk.to_managed_object(_Player:get_field("InputProcessor"))
+    return not sameObject(inputProcessor, _InputProcessor)
+end
+
 -- setup managed objects that need to wait until runtime availability
 local function initManagedObjects()
+    if MOInitialized and isPlayerStale() then
+        _log("initManagedObjects", "player changed; reinitializing")
+        if stopHotkeySlowAim then stopHotkeySlowAim() end
+        MOInitialized = false
+        _Character, _Player, _Human = nil, nil, nil
+        _CommonActionController, _InputProcessor = nil, nil
+        isAiming = false
+    end
     if not MOInitialized then
         _log("initManagedObjects", "start")
         _CharacterManager = sdk.get_managed_singleton("app.CharacterManager")
@@ -588,7 +613,7 @@ local hotkeyActive = false
 local hotkeyPendingAt = nil
 local hotkeyWasDown = false
 
-local function stopHotkeySlowAim()
+function stopHotkeySlowAim()
     hotkeyActive = false
     hotkeyPendingAt = nil
     if not slowAimOn then return end
