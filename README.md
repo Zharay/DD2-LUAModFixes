@@ -19,6 +19,8 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 ### [Hide Helmets Out of Combat](https://www.nexusmods.com/dragonsdogma2/mods/961) by [CriticalError](https://www.nexusmods.com/dragonsdogma2/users/76665613)
 - Now checks if we are in combat every 15 frames instead of every frame, reducing performance impact.
 - Fixed equipment errors and updated to latest REFramework method calls
+- Added hotkey override that allows you to hide the helmets of your player and pawn
+- Now requires [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)
 
 ### [Mark Important NPCs](https://www.nexusmods.com/dragonsdogma2/mods/433) by [mishapsi](https://www.nexusmods.com/dragonsdogma2/users/14594374)
 - Fixed ImgGUI call errors
