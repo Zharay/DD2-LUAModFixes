@@ -118,8 +118,11 @@ jobs:
         shell: bash
         run: |
           TAG="build-${{ github.run_number }}"
+          COMMIT_MESSAGE="$(git show -s --format=%B "$GITHUB_SHA")"
+          printf 'Automated build from commit %s.\n\nLast commit message:\n\n%s\n' \
+            "$GITHUB_SHA" "$COMMIT_MESSAGE" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" dist/*.zip \
             --target "${{ github.sha }}" \
             --title "Build ${{ github.run_number }}" \
-            --notes "Automated build from commit ${{ github.sha }}." \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
             --latest
