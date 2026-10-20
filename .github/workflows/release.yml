@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Build zip files
         shell: bash
@@ -117,10 +119,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
           TAG="build-${{ github.run_number }}"
-          COMMIT_MESSAGE="$(git show -s --format=%B "$GITHUB_SHA")"
-          printf 'Automated build from commit %s.\n\nLast commit message:\n\n%s\n' \
-            "$GITHUB_SHA" "$COMMIT_MESSAGE" > "$RUNNER_TEMP/release-notes.md"
+          PREVIOUS_TAG="$(gh release list --exclude-drafts --exclude-pre-releases \
+            --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          COMMIT_RANGE="$GITHUB_SHA"
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            COMMIT_RANGE="$PREVIOUS_TAG..$GITHUB_SHA"
+          fi
+
+          {
+            printf 'Automated build from commit %s.\n\n' "$GITHUB_SHA"
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              printf '## Changes since %s\n\n' "$PREVIOUS_TAG"
+            else
+              printf '## All commits\n\n'
+            fi
+            git log --reverse --format='### %h%n%n%B' "$COMMIT_RANGE" --
+          } > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" dist/*.zip \
             --target "${{ github.sha }}" \
             --title "Build ${{ github.run_number }}" \
