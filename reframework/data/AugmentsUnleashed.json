@@ -60,7 +60,10 @@
         "47": "Trickster: Obfuscation",
         "48": "Trickster: Allure",
         "49": "Warfarer: Zeal",
-        "50": "Warfarer: Dynamism"
+        "50": "Warfarer: Dynamism",
+        "51": "All: Advertence",
+        "52": "All: Fortuity",
+        "53": "All: Lupinity"
     },
     "AugmentDescribtions": {
         "4": "Increases the likelihood of being targeted by foes",
@@ -109,7 +112,10 @@
         "47": "Decreases the likelihood that hostile targets will detect you when you are not in battle stance",
         "48": "Enables you to raise your affinity with people more easily",
         "49": "Reduces the Stamina consumed when performing a weapon skill",
-        "50": "Reduces the amount by which weight affects your movement speed"
+        "50": "Reduces the amount by which weight affects your movement speed",
+        "51": "Acquirable items dropped by foes you encounter are displayed on the minimap",
+        "52": "You have a chance of acquiring an additional gold from treasure chests and meat from enemies",
+        "53": "Reduces Stamina consumed by jumping and dashing while accompanying the hound"
     },
     "AugmentModDescriptions": {
         "4": "Increases the likelihood of being targeted by foes by [%f * Agression].",
@@ -158,7 +164,10 @@
         "47": "Decreases the likelihood that hostile targets will detect you when you are not in battle stance [Chance * %f].",
         "48": "Enables you to raise your affinity with people more easily [Affinity Gain * %f].",
         "49": "Reduces the Stamina consumed when performing a weapon skill [Consumtion * %f].",
-        "50": "Reduces the amount by which weight affects your movement speed by [%f Categories]"
+        "50": "Reduces the amount by which weight affects your movement speed by [%f Categories]",
+        "51": "",
+        "52": "Chance of acquiring additional gold from chests by %f and meat from enemies by %f.",
+        "53": "Reduces Stamina consumed by jumping and dashing while accompanying the hound [Consumtion * %f]."
     },
     "Augment_Overhual_Default_Settings": {
         "4": {
@@ -347,6 +356,18 @@
         },
         "50": {
             "Value": 1.0,
+            "Value2": 0.0
+        },
+        "51": {
+            "Value": 0.0,
+            "Value2": 0.0
+        },
+        "52": {
+            "Value": 0.0,
+            "Value2": 0.0
+        },
+        "53": {
+            "Value": 0.0,
             "Value2": 0.0
         }
     }

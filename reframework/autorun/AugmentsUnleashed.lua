@@ -1,11 +1,11 @@
 -- Authur K1ng4
 -- Version 2.2
 -- This took me forever :D
-
 local re = re
 local sdk = sdk
 local json = json
 local ui = imgui
+local modname = "AugmentsUnleashed"
 local dataPath = "AugmentsUnleashed.json"
 local configPath = "AugmentsUnleashedConfig.json"
 -- 1 = Player, 2 = Pawn (index into the Augments Menu drop-list)
@@ -40,7 +40,17 @@ local dataAugmentsPawnEnabled = {}
 local dataDescriptiveMode = false
 
 local ABILITY_MIN = 4
-local ABILITY_MAX = 50
+local ABILITY_MAX = 53
+local PLAYER_ONLY_AUGMENTS = {
+	[51] = true,
+	[52] = true,
+	[53] = true,
+}
+
+local function canUseAugment(id, isPawn)
+	return not isPawn or not PLAYER_ONLY_AUGMENTS[id]
+end
+
 -- The game's own augment slots (app.AbilityContext.AbilitySlot No0..No6). These are kept
 -- untouched; mod augments are written after them.
 local NATIVE_SLOT_COUNT = 7
@@ -49,6 +59,15 @@ local ABILITY_ARRAY_SIZE = NATIVE_SLOT_COUNT + (ABILITY_MAX - ABILITY_MIN + 1)
 local App = {
     _version = "1.0"
 }
+
+local function Log(message, level)
+    level = level or "info"
+    local previousLevel = log.get_level and log.get_level() or "error"
+    log.set_level(level)
+    local ok, err = pcall(log[level], "["..modname.."] "..message)
+    log.set_level(previousLevel)
+    if not ok then error(err, 0) end
+end
 
 local PlayerManager = sdk.get_managed_singleton("app.CharacterManager")
 local function GetCharacterManager()
@@ -237,6 +256,17 @@ local function getAbilityValue(arr, index)
 	return tonumber(value) or 0
 end
 
+local reportedUnknownAugments = {}
+local function reportUnknownAugment(id, slot, job, target)
+	if id == 0 or reportedUnknownAugments[id] then return end
+	local name = dataAugments[tostring(id)]
+	if type(name) == "string" and name:match("%S") then return end
+	Log(string.format(
+		": Unknown equipped augment: ID=%d, character=%s, vocation=%s, native slot=%d (zero-based). Missing Augments[\"%d\"] in %s.",
+		id, target, tostring(job), slot, id, dataPath))
+	reportedUnknownAugments[id] = true
+end
+
 -- Use the typed HumanAbilityID[]::Set instead of arr[i] = v, which no longer works for
 -- value-type arrays in current REFramework builds.
 local function setAbilityValue(arr, index, value)
@@ -267,14 +297,15 @@ local function createAbilityList(currentList)
 	return newList
 end
 
-local function applyAugments(abilityList, enabledAugments)
+local function applyAugments(abilityList, enabledAugments, isPawn)
 	for i = ABILITY_MIN, ABILITY_MAX do
-		setAbilityValue(abilityList, NATIVE_SLOT_COUNT + (i - ABILITY_MIN), enabledAugments[tostring(i)] and i or 0)
+		local enabled = canUseAugment(i, isPawn) and enabledAugments[tostring(i)]
+		setAbilityValue(abilityList, NATIVE_SLOT_COUNT + (i - ABILITY_MIN), enabled and i or 0)
 	end
 end
 
 -- Returns a set of augment IDs equipped through the game's own augment slots.
-local function getNativeEquipped(abilityContext, job)
+local function getNativeEquipped(abilityContext, job, target)
 	local equipped = {}
 	if abilityContext == nil or job == nil then return equipped end
 	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
@@ -282,13 +313,14 @@ local function getNativeEquipped(abilityContext, job)
 	local currentList = currentEquiped:get_field("Abilities")
 	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
 		local id = getAbilityValue(currentList, i)
+		reportUnknownAugment(id, i, job, target)
 		if id ~= 0 then equipped[id] = true end
 	end
 	return equipped
 end
 
-local PlayerAbilityState = { list = nil, init = false }
-local PawnAbilityState = { list = nil, init = false }
+local PlayerAbilityState = { list = nil, init = false, target = "Player" }
+local PawnAbilityState = { list = nil, init = false, target = "Main Pawn", isPawn = true }
 
 local function resetAbilityState(state)
 	state.list = nil
@@ -302,6 +334,9 @@ local function updateEquipedList(state, abilityContext, job, enabledAugments, on
 	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
 	if currentEquiped == nil then return false end
 	local currentList = currentEquiped:get_field("Abilities")
+	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
+		reportUnknownAugment(getAbilityValue(currentList, i), i, job, state.target)
+	end
 	local isOurList = state.init and state.list ~= nil and getAddress(currentList) == getAddress(state.list)
 	if onlyIfStale and isOurList then return true end
 	if not isOurList then
@@ -310,7 +345,7 @@ local function updateEquipedList(state, abilityContext, job, enabledAugments, on
 		state.list = newList
 		state.init = true
 	end
-	applyAugments(state.list, enabledAugments)
+	applyAugments(state.list, enabledAugments, state.isPawn)
 	if not isOurList then currentEquiped:set_field("Abilities", state.list) end
 	return true
 end
@@ -439,8 +474,8 @@ re.on_draw_ui(function()
 			local enabledAugments = isPawnTarget and dataAugmentsPawnEnabled or dataAugmentsPlayerEnabled
 			local updateEquipedListTarget = isPawnTarget and updateEquipedListPawn or updateEquipedListPlayer
 			local okEquipped, nativeEquipped = pcall(function()
-				if isPawnTarget then return getNativeEquipped(GetPawnAbilityContext(), GetPawnJob()) end
-				return getNativeEquipped(GetPlayerAbilityContext(), GetPlayerJob())
+				if isPawnTarget then return getNativeEquipped(GetPawnAbilityContext(), GetPawnJob(), "Main Pawn") end
+				return getNativeEquipped(GetPlayerAbilityContext(), GetPlayerJob(), "Player")
 			end)
 			if not okEquipped or type(nativeEquipped) ~= "table" then nativeEquipped = {} end
 
@@ -451,34 +486,36 @@ re.on_draw_ui(function()
 
 			-- Augments
 			for i = ABILITY_MIN, ABILITY_MAX do
-				local key = tostring(i)
-				local description = dataAugmentsDescribtion[key]
-				local info = dataAugments[key] or ("Augment " .. key)
-				if dataDescriptiveMode and description then info = info .. " [" .. description .. "]" end
-				if not enabledAugments[key] then enabledAugments[key] = false end
-				if nativeEquipped[i] then
-					local tooltip = ModStrings["EquippedTooltip"]
-					if description then tooltip = tooltip .. "\n" .. description end
-					local boxPos = ui.get_cursor_screen_pos()
-					ui.begin_disabled()
-					ui.checkbox("##AugmentEquipped" .. key, false)
-					local hovered = ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
-					ui.same_line(0, 0)
-					-- A label-less checkbox is square, so the cursor now sits on its right edge.
-					local boxSize = ui.get_cursor_screen_pos().x - boxPos.x
-					ui.same_line(0, labelGap)
-					ui.text(info)
-					hovered = hovered or ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
-					ui.end_disabled()
-					drawCross(boxPos.x, boxPos.y, boxSize)
-					if hovered then setTooltip(tooltip) end
-				else
-					local changed, value = ui.checkbox(info, enabledAugments[key])
-					if description and ui.is_item_hovered() then setTooltip(description) end
-					if changed then
-						enabledAugments[key] = value
-						updateEquipedListTarget()
-						save()
+				if canUseAugment(i, isPawnTarget) then
+					local key = tostring(i)
+					local description = dataAugmentsDescribtion[key]
+					local info = dataAugments[key] or ("Augment " .. key)
+					if dataDescriptiveMode and description then info = info .. " [" .. description .. "]" end
+					if not enabledAugments[key] then enabledAugments[key] = false end
+					if nativeEquipped[i] then
+						local tooltip = ModStrings["EquippedTooltip"]
+						if description then tooltip = tooltip .. "\n" .. description end
+						local boxPos = ui.get_cursor_screen_pos()
+						ui.begin_disabled()
+						ui.checkbox("##AugmentEquipped" .. key, false)
+						local hovered = ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
+						ui.same_line(0, 0)
+						-- A label-less checkbox is square, so the cursor now sits on its right edge.
+						local boxSize = ui.get_cursor_screen_pos().x - boxPos.x
+						ui.same_line(0, labelGap)
+						ui.text(info)
+						hovered = hovered or ui.is_item_hovered(HOVERED_ALLOW_WHEN_DISABLED)
+						ui.end_disabled()
+						drawCross(boxPos.x, boxPos.y, boxSize)
+						if hovered then setTooltip(tooltip) end
+					else
+						local changed, value = ui.checkbox(info, enabledAugments[key])
+						if description and ui.is_item_hovered() then setTooltip(description) end
+						if changed then
+							enabledAugments[key] = value
+							updateEquipedListTarget()
+							save()
+						end
 					end
 				end
 			end
@@ -684,7 +721,7 @@ end)
 function App.Init()
 	local data = {}
 	local config = {}
-	print("Augments Unleashed Initilization!")
+	Log("Augments Unleashed Initilization!")
 	-- Loading Data
 	data = json.load_file(dataPath) or {}
 	for key, value in pairs(data) do
