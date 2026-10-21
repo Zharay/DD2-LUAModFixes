@@ -53,6 +53,8 @@ local cached_msg=nil
 local cached_w,cached_h=0,0
 local cached_key=nil
 local next_poll=0
+local player_available=false
+local next_player_poll=0
 
 --On setting Change
 local function OnChanged()
@@ -84,10 +86,21 @@ re.on_frame(function()
         config.EnableClock=not config.EnableClock
     end
     if not config.EnableClock then return end
+
+    local now=os.clock()
+    if now>=next_player_poll then
+        next_player_poll=now+0.5
+        local characterManager=sdk.get_managed_singleton("app.CharacterManager")
+        player_available=(characterManager~=nil and characterManager:get_ManualPlayer()~=nil)
+        if not player_available then
+            cached_msg=nil
+            cached_key=nil
+        end
+    end
+    if not player_available then return end
     if config.DisableInMenu and guiManager~=nil and guiManager:get_IsLoadGui() then return end
 
     -- 1 in-game minute = 2 real seconds, so polling 4x per in-game minute is plenty
-    local now=os.clock()
     if now>=next_poll or cached_key==nil then
         next_poll=now+0.5
         local in_cutscene=false

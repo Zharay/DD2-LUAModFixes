@@ -77,16 +77,18 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 - Used examples from AdancedPawnSearch to do Get/Set methods within the array
 - Player and pawn functions are now one
 - Now uses the game's dynamic list size for number of augments, though it will not show (yet)
+- Will use slot 8 and beyond rather than replacing slot 7 as it used to (6 was the old limit before Dark Arisen)
 - Vocation change will now determine who changed and if it is the player or the main pawn
 - Fixed bug where resetting scripts was actually inverting selected augments on load
 - Text boxes in the UI no longer share the same IDs (IMGUI would complain if multiple were loaded/visible)
 - Game rebuilds augment list whenever a change is detected
 - Now waits patiently until the references it wants exists
 - We now obtain a list of currently equipped augments and disable them in the augment list with a bold red X in the checkbox.
-- Tooltips will update to include if the augment is equipped already.
+- Tool-tips will update to include if the augment is equipped already.
 - Fixed hard coded augment index ranges
 - Skip over errors involving missing JSON entries (this could've stopped the script hard)
 - Skip over IDs we do not recognize (must add missing Dark Arisen augments)
+- Added Dark Arisen augments (player only) and Lupinity is the only one editable.
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell.
@@ -102,3 +104,4 @@ This mod is technically working but by the brine does it eat up resources at hig
 - Changing font size no longer requires a restart
 - Added ability to disable the clock during cutscenes (tho what the game counts as cutscenes is spotty)
   - This check is done every 0.5 sec as it is costly otherwise
+- Now waits until player is loaded and ready before displaying anything on screen. Clears it when it is not.
