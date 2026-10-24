@@ -1,4 +1,4 @@
-
+local modname = "Carry It For Me"
 local re = re
 local sdk = sdk
 local d2d = d2d
@@ -9,10 +9,17 @@ local draw = draw
 local thread = thread
 local debug = false
 
+local function Log(message, level)
+    level = level or "info"
+    local previousLevel = log.get_level and log.get_level() or "error"
+    log.set_level(level)
+    local ok, err = pcall(log[level], "["..modname.."] "..message)
+    log.set_level(previousLevel)
+    if not ok then error(err, 0) end
+end
+
 if debug then
-    log.set_level("info")
-    log.info("[Carry It For Me] Loaded")
-    log.set_level("error")
+    Log("Initializing...")
 end
 
 local Config = json.load_file('carry_it_for_me.json') or {}
@@ -77,20 +84,13 @@ end
 local NextPawnIndex = 0
 local MaxPartyPawns = 3 -- player + up to 3 pawns is the max party size
 
-local function Log(msg)
-    if debug then
-        log.set_level("info")
-        log.info("[Carry It For Me] " .. msg)
-        log.set_level("error")
-    end
-end
 
 local StorageListSignature = "getStorageList(app.Character, System.Predicate`1<app.ItemManager.StorageMasterData>)"
 
 local function GetStorageList(itemManager, player)
     local list = itemManager:call(StorageListSignature, player, nil)
     if not list then
-        error("player storage list unavailable")
+        Log("player storage list unavailable", "error")
     end
     return list
 end
