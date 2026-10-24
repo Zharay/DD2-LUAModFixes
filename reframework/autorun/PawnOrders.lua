@@ -5,6 +5,7 @@
 -- Hold LT + D-pad: Left / Up / Right pick the target pawn (main / hired 1 / hired 2), Down cancels its action.
 -- Optional "hold LT" mode (menu): the orders open only after LT is held for a set time (0.25 s default, 0-1 s);
 -- a shorter press reaches the game as a normal LT tap (sheathe / draw).
+-- RB takes priority over LT orders until LT is released; release RB, then press LT again to give orders.
 -- Keyboard: one key per position, picked in the same menu (all vocations); the game still sees the key.
 -- Action mechanism adapted from "Additional Pawn Commands" by its Nexus author
 -- (https://www.nexusmods.com/dragonsdogma2/mods/1020).
@@ -12,7 +13,7 @@
 -- (https://www.nexusmods.com/dragonsdogma2/mods/1223).
 -- Input filtering on app.UserInput.update follows dd2gether's realtime_menus.lua.
 
-local VERSION = "0.9.42" -- release: optional "hold LT" mode (LT tap = sheathe / draw, hold time 0-1 s in the menu)
+local VERSION = "0.9.43" -- RB/LT arbitration and HUD writes in the native GUI update hooks
 -- DEV = test build: full log kept across runs, skill table file, F9-F10 test aids.
 -- Release (false): short log recreated each session, no toggles.
 local DEV = false
@@ -252,7 +253,7 @@ end
 local RELEASE_TAGS = { ERR = true, WARN = true, BIND = true, JOB = true, PARTY = true, PAWN = true, AI = true,
                        TARGET = true, PACK = true, QUEUE = true, FIRE = true, START = true, READY = true, CAST = true,
                        LANDED = true, END = true, CANCEL = true, AICANCEL = true, AIMODE = true, SUM = true,
-                       PREP = true, RETRY = true }
+                       PREP = true, RETRY = true, HUD = true }
 -- Lines are buffered and written once per LOG_FLUSH s (opening the file for every line cost a file open per
 -- line; a [DUMP] burst was hundreds in one frame)
 local LOG_FLUSH = 1.0
@@ -348,6 +349,8 @@ local LTH = {
     open = false,  -- this LT press opened the orders (always at once outside hold mode)
     tap = nil,     -- { flags, frame } short LT press being replayed to the game
     chord_bits = DPAD_BITS, -- + face buttons below: pressed under LT, they open the orders at once
+    blocked = false, -- an RB overlap cancels this entire physical LT press
+    rb_prev = false,
 }
 for bit in pairs(FACE_NAME) do LTH.chord_bits = LTH.chord_bits | bit end
 local PAIR = { A = { "X", "A+X" }, X = { "A", "A+X" }, B = { "Y", "B+Y" }, Y = { "B", "B+Y" } }
@@ -2248,6 +2251,23 @@ local function on_player_input(input)
     end
 
     local lt_phys = chord_on("LT") and LT_BITS ~= 0 and pad & LT_BITS ~= 0
+    AIM.rb_now = (BTN.RTrigTop or 0) ~= 0 and pad & BTN.RTrigTop ~= 0
+    if lt_phys and (AIM.rb_now or LTH.rb_prev) then
+        if not LTH.blocked then
+            log_line("[HUD] RB/LT overlap: player ability priority until LT is released")
+            log_flush()
+        end
+        LTH.blocked = true
+    elseif not lt_phys then
+        LTH.blocked = false
+    end
+    LTH.rb_prev = AIM.rb_now
+    if LTH.blocked then
+        LTH.press_t, LTH.open, LTH.tap = nil, false, nil
+        lt_down, lt_on, lt_wait = false, false, nil
+        lt_flag_mask, lt_learn = 0, 0
+        return -- leave RB, LT and face buttons untouched for the player
+    end
     if lt_phys then
         if not LTH.press_t then
             LTH.press_t = now()
@@ -2256,6 +2276,9 @@ local function on_player_input(input)
         -- hold mode: held long enough, or a chord button pressed under LT (cannot be a tap any more)
         if not LTH.open and (now() - LTH.press_t >= LTH.hold_time() or down & LTH.chord_bits ~= 0) then
             LTH.open = true
+            log_line(string.format("[HUD] orders opened: %s, held %.3f s, down=0x%X",
+                down & LTH.chord_bits ~= 0 and "chord" or "hold", now() - LTH.press_t, down))
+            log_flush()
             pad_log(string.format("[LT] hold: orders open after %.2f s", now() - LTH.press_t))
         end
     else
@@ -2269,9 +2292,6 @@ local function on_player_input(input)
         LTH.open = false
     end
     local lt_held = lt_phys and LTH.open
-    -- RB held = the game drives the skill palette (bow / magic bow / throw aim); read by the HUD (0.9.41)
-    AIM.rb_now = (BTN.RTrigTop or 0) ~= 0 and pad & BTN.RTrigTop ~= 0
-    if lt_held and not lt_down then AIM.rb_at_lt = AIM.rb_now end
     lt_down = lt_held
     if lt_phys and not lt_on then
         lt_on = true
@@ -2822,12 +2842,8 @@ local palette_holds = 0
 local palette_last = nil   -- last logged texts of the 10 panels
 local palette_watch = 0
 
-local function find_palette(quiet)
-    local scene = sdk.call_native_func(sdk.get_native_singleton("via.SceneManager"),
-        sdk.find_type_definition("via.SceneManager"), "get_CurrentScene()")
-    local go = scene and scene:call("findGameObject(System.String)", PALETTE_GUI)
-    if not go then return nil, "GameObject " .. PALETTE_GUI .. " not found" end
-    local gui = go:call("getComponent(System.Type)", sdk.typeof("app.GUIBase"))
+local function find_palette(gui, quiet)
+    local go = gui:call("get_GameObject()")
     local root = gui and gui:get_field("Root")
     if not root then return nil, PALETTE_GUI .. " has no app.GUIBase / Root" end
     local get_obj = sdk.find_type_definition("via.gui.Control"):get_method("getObject(System.String)")
@@ -2835,7 +2851,7 @@ local function find_palette(quiet)
         local ok, obj = pcall(get_obj.call, get_obj, root, path)
         return ok and obj or nil
     end
-    local p = { go = go, texts = {}, all = {} }
+    local p = { go = go, root = root, texts = {}, all = {} }
     local parts = {}
     for button, path in pairs(PALETTE_TEXT) do
         p.texts[button] = get(path)
@@ -2921,42 +2937,45 @@ function AIM.palette_color(button, obj, id, p)
 end
 function AIM.palette_colors_back(saved)
     for button, c in pairs(saved.colors or {}) do
-        pcall(function() palette.texts[button]:call("set_Color(via.Color)", c) end)
+        palette.texts[button]:call("set_Color(via.Color)", c)
     end
 end
 
--- 0.9.41 (crash: LT released or tapped while aiming the bow): while RB is held the game drives this palette, and
--- putting its texts back then (set_Message) corrupts the game heap - the game crashed a few ms later.
--- An LT hold that starts with RB held leaves the palette and the D-pad labels to the game, and a restore waits
--- until RB is up.
+-- Restore only in the owning GUI's update hook, never from a general application-entry callback.
 local function palette_restore(why)
     local saved = palette_saved
     palette_saved = nil
     for button, msg in pairs(saved.texts) do
-        pcall(function() palette.texts[button]:call("set_Message(System.String)", msg) end)
+        local obj = palette.texts[button]
+        if saved.written[button] == obj:call("get_Message") then
+            obj:call("set_Message(System.String)", msg)
+        end
     end
     AIM.palette_colors_back(saved)
     for _, rec in ipairs(saved.visible) do
-        pcall(function() rec.el:call("set_Visible", rec.vis) end)
+        rec.el:call("set_Visible", rec.vis)
     end
-    pcall(function()
-        palette.go:call("set_DrawSelf", saved.draw_self)
-        palette.go:call("set_UpdateSelf", saved.update_self)
-    end)
+    palette.go:call("set_DrawSelf", saved.draw_self)
+    palette.go:call("set_UpdateSelf", saved.update_self)
     if palette_holds <= 3 then
         palette_check = 2
         log_line("[HUD] palette restored (" .. why .. ")")
     end
 end
 
-local function palette_frame()
+local function palette_frame(gui)
+    local root = gui:get_field("Root")
+    if palette and palette.root ~= root then
+        palette, palette_saved, palette_check = nil, nil, nil
+        log_line("[HUD] palette root changed; discarded old controls")
+    end
     if not palette then
         -- not in the scene yet (title screen / loading): looked for again every 2 s
         local t = now()
         if t < palette_next_find then return end
         palette_next_find = t + 2.0
         local why
-        palette, why = find_palette()
+        palette, why = find_palette(gui)
         if not palette then
             if not palette_failed then
                 palette_failed = true
@@ -2965,16 +2984,17 @@ local function palette_frame()
             return
         end
     end
-    local want = lt_down and cur_job ~= nil and not AIM.rb_at_lt
+    local want = lt_down and cur_job ~= nil and not LTH.blocked and not AIM.rb_now
     if want and not palette_saved then
         -- 0.9.39: looked up again at each LT hold, so a GUI rebuilt by a load (title screen, new game) is never
         -- written through the old objects; the 0.9.38 lookup was once per run
-        local p = find_palette(true)
-        if p then palette = p end
+        local p = find_palette(gui, true)
+        if not p then return end
+        palette = p
     end
     if DEV then palette_watch_frame() end
     if not want then
-        if palette_saved and not AIM.rb_now then palette_restore("LT released") end
+        if palette_saved then palette_restore("orders closed") end
         if palette_check then
             palette_check = palette_check - 1
             if palette_check == 0 then
@@ -2992,7 +3012,7 @@ local function palette_frame()
     if not palette_saved then
         palette_holds = palette_holds + 1
         palette_saved = { draw_self = palette.go:call("get_DrawSelf"), update_self = palette.go:call("get_UpdateSelf"),
-                          texts = {}, visible = {}, logged = palette_holds > 3 }
+                          texts = {}, written = {}, visible = {}, logged = palette_holds > 3 }
         local parts = {}
         palette_saved.colors = {}
         for button, obj in pairs(palette.texts) do
@@ -3040,6 +3060,7 @@ local function palette_frame()
         local name = palette_name(id)
         local text = prefix .. name
         if tostring(obj:call("get_Message")) ~= text then obj:call("set_Message(System.String)", text) end
+        palette_saved.written[button] = text
         AIM.palette_color(button, obj, id, tp)
         parts[#parts + 1] = button .. "='" .. tostring(obj:call("get_Message")) .. "'"
     end
@@ -3059,9 +3080,9 @@ end
 -- While LT is held, the pawn command labels (GUI ui020401, Go / Wait / Help / To me) show what LT + D-pad does:
 -- Left / Up / Right = main / hired 1 / hired 2 pawn name ("> " marks the target), Down = "Cancel: <target>".
 -- Paths from Skill Maker (it writes its skill names there in a post-hook of app.ui020401.update); written here
--- the same way as the palette (LateUpdateBehavior, game text saved at LT down and put back at release).
+-- in the owning GUI's update hook, with game text saved at LT down and put back at release.
 -- in its own block: the main chunk is near Lua's 200-locals limit
-local dpad_api = {} -- frame(), restore(why), saving() = labels currently ours
+local dpad_api = {} -- frame(gui), clear(), saving() = labels currently ours
 do
 local DPAD_GUI = "ui020401"
 local DPAD_TEXT = {}
@@ -3072,16 +3093,12 @@ local dpad_next_find = 0
 local dpad_saved = nil      -- during a hold: { draw_self, update_self, texts, visible, logged }
 local dpad_holds = 0
 
-local function find_dpad(quiet)
-    local scene = sdk.call_native_func(sdk.get_native_singleton("via.SceneManager"),
-        sdk.find_type_definition("via.SceneManager"), "get_CurrentScene()")
-    local go = scene and scene:call("findGameObject(System.String)", DPAD_GUI)
-    if not go then return nil, "GameObject " .. DPAD_GUI .. " not found" end
-    local gui = go:call("getComponent(System.Type)", sdk.typeof("app.GUIBase"))
+local function find_dpad(gui, quiet)
+    local go = gui:call("get_GameObject()")
     local root = gui and gui:get_field("Root")
     if not root then return nil, DPAD_GUI .. " has no app.GUIBase / Root" end
     local get_obj = sdk.find_type_definition("via.gui.Control"):get_method("getObject(System.String)")
-    local h = { go = go, texts = {} }
+    local h = { go = go, root = root, texts = {} }
     local parts = {}
     for d, path in pairs(DPAD_TEXT) do
         local ok, obj = pcall(get_obj.call, get_obj, root, path)
@@ -3111,25 +3128,31 @@ local function dpad_restore(why)
     local saved = dpad_saved
     dpad_saved = nil
     for d, msg in pairs(saved.texts) do
-        pcall(function() dpad_hud.texts[d]:call("set_Message(System.String)", msg) end)
+        local obj = dpad_hud.texts[d]
+        if saved.written[d] == obj:call("get_Message") then
+            obj:call("set_Message(System.String)", msg)
+        end
     end
     for _, rec in ipairs(saved.visible) do
-        pcall(function() rec.el:call("set_Visible", rec.vis) end)
+        rec.el:call("set_Visible", rec.vis)
     end
-    pcall(function()
-        dpad_hud.go:call("set_DrawSelf", saved.draw_self)
-        dpad_hud.go:call("set_UpdateSelf", saved.update_self)
-    end)
+    dpad_hud.go:call("set_DrawSelf", saved.draw_self)
+    dpad_hud.go:call("set_UpdateSelf", saved.update_self)
     if dpad_holds <= 3 then log_line("[HUD] D-pad labels restored (" .. why .. ")") end
 end
 
-local function dpad_frame()
+local function dpad_frame(gui)
+    local root = gui:get_field("Root")
+    if dpad_hud and dpad_hud.root ~= root then
+        dpad_hud, dpad_saved = nil, nil
+        log_line("[HUD] D-pad root changed; discarded old controls")
+    end
     if not dpad_hud then
         local t = now()
         if t < dpad_next_find then return end
         dpad_next_find = t + 2.0
         local why
-        dpad_hud, why = find_dpad()
+        dpad_hud, why = find_dpad(gui)
         if not dpad_hud then
             if not dpad_failed then
                 dpad_failed = true
@@ -3138,17 +3161,18 @@ local function dpad_frame()
             return
         end
     end
-    if not lt_down or AIM.rb_at_lt then
-        if dpad_saved and not AIM.rb_now then dpad_restore("LT released") end
+    if not lt_down or LTH.blocked or AIM.rb_now then
+        if dpad_saved then dpad_restore("orders closed") end
         return
     end
     if not dpad_saved then
         -- 0.9.39: looked up again at each LT hold (see palette_frame)
-        local h = find_dpad(true)
-        if h then dpad_hud = h end
+        local h = find_dpad(gui, true)
+        if not h then return end
+        dpad_hud = h
         dpad_holds = dpad_holds + 1
         dpad_saved = { draw_self = dpad_hud.go:call("get_DrawSelf"), update_self = dpad_hud.go:call("get_UpdateSelf"),
-                       texts = {}, visible = {}, logged = dpad_holds > 3 }
+                       texts = {}, written = {}, visible = {}, logged = dpad_holds > 3 }
         local parts = {}
         for d, obj in pairs(dpad_hud.texts) do
             dpad_saved.texts[d] = obj:call("get_Message")
@@ -3185,6 +3209,7 @@ local function dpad_frame()
         local prefix = orig:match("^(<COLOR[^>]*></COLOR>)") or ""
         local text = prefix .. dpad_label(d)
         if tostring(obj:call("get_Message")) ~= text then obj:call("set_Message(System.String)", text) end
+        dpad_saved.written[d] = text
         parts[#parts + 1] = d .. "='" .. tostring(obj:call("get_Message")) .. "'"
     end
     for _, rec in ipairs(dpad_saved.visible) do
@@ -3201,31 +3226,52 @@ local function dpad_frame()
 end
 
 dpad_api.frame = dpad_frame
-dpad_api.restore = dpad_restore
 dpad_api.saving = function() return dpad_saved ~= nil end
+dpad_api.clear = function()
+    dpad_hud, dpad_saved = nil, nil
+    dpad_next_find = 0
+end
 end
 
--- after the game's own GUI update in the frame (Skill Maker writes in LateUpdateBehavior too)
-local palette_error = false
-local dpad_error = false
-re.on_application_entry("LateUpdateBehavior", function()
-    if not dpad_error and (dpad_api.saving() or lt_down) then
-        local ok, e = pcall(dpad_api.frame)
-        if not ok then
-            dpad_error = true
-            err("hud D-pad labels (off for this run)", e)
-            if dpad_api.saving() then pcall(dpad_api.restore, "error") end
+do
+    local function clear_palette()
+        palette, palette_saved, palette_check = nil, nil, nil
+        palette_next_find = 0
+    end
+    local function hook_hud(type_name, signature, frame, clear, saving)
+        local update_method = find_method(type_name, signature)
+        local destroy_method = find_method(type_name, "onDestroy()")
+        if not update_method or not destroy_method then
+            err("hud " .. type_name, "required lifecycle hooks missing; labels disabled")
+            return
         end
+        local failed = false
+        sdk.hook(update_method,
+            function(args)
+                thread.get_hook_storage().pawn_orders_gui = args[2]
+            end,
+            function(retval)
+                if failed or (not DEV and not lt_down and not saving()) then return retval end
+                local ok, e = pcall(function()
+                    local gui = sdk.to_managed_object(thread.get_hook_storage().pawn_orders_gui)
+                    if gui then frame(gui) end
+                end)
+                if not ok then
+                    failed = true
+                    clear()
+                    err("hud " .. type_name .. " (labels off for this run)", e)
+                end
+                return retval
+            end)
+        sdk.hook(destroy_method, function()
+            clear() -- native controls must not be touched once destruction starts
+        end, function(retval) return retval end)
+        log_line("[HUD] hooked " .. type_name .. "." .. signature)
     end
-    if palette_error then return end
-    if not DEV and not palette_saved and not palette_check and not lt_down then return end -- cheap exit
-    local ok, e = pcall(palette_frame)
-    if not ok then
-        palette_error = true
-        err("hud palette (off for this run)", e)
-        if palette_saved then pcall(palette_restore, "error") end
-    end
-end)
+    hook_hud("app.ui010201", "lateUpdate()", palette_frame, clear_palette,
+        function() return palette_saved ~= nil or palette_check ~= nil end)
+    hook_hud("app.ui020401", "update()", dpad_api.frame, dpad_api.clear, dpad_api.saving)
+end
 
 ---------------------------------------------------------------- REFramework menu (decision 10)
 
@@ -3249,6 +3295,7 @@ re.on_draw_ui(function()
         end
         imgui.text("Hold the first button and press the second: the target pawn uses the skill bound there.")
         imgui.text("Hold LT + D-pad: Left = main pawn, Up = hired pawn 1, Right = hired pawn 2 (target), Down = cancel its action.")
+        imgui.text("RB takes priority: release LT, then press LT again after releasing RB to give pawn orders.")
         local hold_changed, hold_v = imgui.checkbox("Hold LT to open the orders (a tap keeps LT's game action)##lthold",
             config.lt_hold == true)
         if hold_changed then
