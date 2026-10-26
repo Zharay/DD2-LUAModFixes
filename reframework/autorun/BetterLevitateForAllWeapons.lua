@@ -1,3 +1,4 @@
+local modname = "BetterLevitateForAllWeapons"
 local sdk = sdk
 local log = log
 local json = json
@@ -36,6 +37,15 @@ cfg.MaxHeight  = cfg.MaxHeight  or BETTER.MaxHeight
 cfg.MaxKeepSec = cfg.MaxKeepSec or BETTER.MaxKeepSec
 cfg.MoveSpeed  = cfg.MoveSpeed  or BETTER.MoveSpeed
 local function save_cfg() pcall(function() json.dump_file(CFG_FILE, cfg) end) end
+
+local function Log(message, level)
+    level = level or "info"
+    local previousLevel = log.get_level and log.get_level() or "error"
+    log.set_level(level)
+    local ok, err = pcall(log[level], "["..modname.."] "..message)
+    log.set_level(previousLevel)
+    if not ok then error(err, 0) end
+end
 
 local function cur_values()
     if cfg.enabled then
@@ -94,6 +104,27 @@ local c_start  = ct_def:get_method("start")
 local c_update = ct_def:get_method("update")
 local c_end    = ct_def:get_method("end")
 
+-- Resolve field offsets from runtime metadata; hard-coded offsets went stale after game updates.
+local function field_offset(tdef, name)
+    if not tdef then return nil end
+    local f = tdef:get_field(name)
+    return f and f:get_offset_from_base() or nil
+end
+local OFF = {
+    routine  = field_offset(la_def, "<Routine>k__BackingField"),
+    prevMove = field_offset(la_def, "PrevMoveSpeedTypeValue"),
+    isStart  = field_offset(la_def, "IsStartAction"),
+    human    = field_offset(sdk.find_type_definition("app.UseHumanAction"), "Human"),
+    levTimer = field_offset(ct_def, "Timer"),
+}
+local ACTION_OFFSETS_OK = OFF.routine ~= nil and OFF.prevMove ~= nil and OFF.isStart ~= nil
+local CREATE_ACTION_OK  = ACTION_OFFSETS_OK and OFF.human ~= nil
+if not CREATE_ACTION_OK then
+    Log("LevitateAction layout not found; custom levitation disabled", "warn")
+else
+    Log("LevitateAction layout found; custom levitation enabled", "info")
+end
+
 local _lastClock = os.clock()
 local function get_dt()
     local now = os.clock()
@@ -107,7 +138,6 @@ local snapRoutine, snapPrevMove, snapIsStart = nil, nil, nil
 local replaying = false
 local nativeLevitating = false
 local g_freshCast = false
-local g_playerCommonAddr = 0
 local g_nativeVocation = false
 local lastStartClock = 0
 local lastLevUpdateClock = 0
@@ -125,18 +155,18 @@ sdk.hook(la_start,
     end,
     function(retval)
         if g_nativeVocation then return retval end
-        if cachedAction and not replaying then
+        if cachedAction and not replaying and ACTION_OFFSETS_OK then
             pcall(function()
-                local isStart = cachedAction:read_byte(0x40)
+                local isStart = cachedAction:read_byte(OFF.isStart)
                 if isStart == 1 then
                     if g_freshCast then
                         g_freshCast = false
-                        snapRoutine  = cachedAction:read_dword(0x38)
-                        snapPrevMove = cachedAction:read_dword(0x3c)
+                        snapRoutine  = cachedAction:read_dword(OFF.routine)
+                        snapPrevMove = cachedAction:read_dword(OFF.prevMove)
                         snapIsStart  = isStart
                     else
-                        cachedAction:write_byte(0x40, 0)
-                        cachedAction:write_dword(0x38, 2)
+                        cachedAction:write_byte(OFF.isStart, 0)
+                        cachedAction:write_dword(OFF.routine, 2)
                     end
                 end
             end)
@@ -162,11 +192,11 @@ local function action_start()
         replaying = true
         local ok = pcall(function() la_start:call(cachedAction, cachedArg) end)
         replaying = false
-        if snapRoutine ~= nil then
+        if snapRoutine ~= nil and ACTION_OFFSETS_OK then
             pcall(function()
-                cachedAction:write_dword(0x38, snapRoutine)
-                cachedAction:write_dword(0x3c, snapPrevMove)
-                cachedAction:write_byte(0x40, snapIsStart)
+                cachedAction:write_dword(OFF.routine, snapRoutine)
+                cachedAction:write_dword(OFF.prevMove, snapPrevMove)
+                cachedAction:write_byte(OFF.isStart, snapIsStart)
             end)
         end
         return ok
@@ -187,6 +217,7 @@ local function has_cached_action() return cachedAction ~= nil and cachedArg ~= n
 
 local keepAlive = {}
 local function create_action(human)
+    if not CREATE_ACTION_OK then return false end
     local ok = pcall(function()
         if cachedAction then keepAlive[#keepAlive + 1] = cachedAction end
         if cachedArg then keepAlive[#keepAlive + 1] = cachedArg end
@@ -197,8 +228,9 @@ local function create_action(human)
         if not act or not arg then return end
         act = act:add_ref()
         arg = arg:add_ref()
+        -- Native start/update expect the original hand-built layout (Chara at +0x20), not the reflected field.
         if chara then act:write_qword(0x20, chara:get_address()) end
-        act:write_qword(0x28, human:get_address())
+        act:write_qword(OFF.human, human:get_address())
         act:write_dword(0x10, 0x33062E7A)
         cachedAction = act
         cachedArg    = arg
@@ -271,10 +303,6 @@ end
 
 local function get_lev_ctrl(human)
     return human and human:get_LevitateCtrl()
-end
-
-local function get_common_ctrl(human)
-    return human and human:call("get_HumanCommonActionCtrl()")
 end
 
 local function get_char_ctrl(human)
@@ -355,19 +383,10 @@ local function request_fall(lev, human)
         local mk = 2.8
         local p = lev:get_field("Param")
         if p then mk = p:get_field("MaxKeepSec") or 2.8 end
-        lev:write_float(0x64, mk + 0.05)
+        if OFF.levTimer then lev:write_float(OFF.levTimer, mk + 0.05) end
     end)
     pcall(function() lev:set_field("<IsActive>k__BackingField", false) end)
     pcall(function() c_end:call(lev) end)
-    if human then
-        pcall(function()
-            local chara = human:call("get_Chara()")
-            if chara then
-                chara:write_byte(0xC1C, 0)
-                chara:call("startFreeFallJump", 0.0, 0.0)
-            end
-        end)
-    end
 end
 
 local function apply_turn(human, dbg)
@@ -463,7 +482,6 @@ re.on_application_entry("LateUpdateBehavior", function()
 
     local lev      = get_lev_ctrl(human)
     local ctrl     = get_char_ctrl(human)
-    local common   = get_common_ctrl(human)
     if not lev or not ctrl then return end
 
     do
@@ -527,14 +545,6 @@ re.on_application_entry("LateUpdateBehavior", function()
         return
     end
 
-    if common then
-        pcall(function()
-            common:write_dword(0x78, 6)
-            common:write_dword(0x7c, 6)
-            g_playerCommonAddr = common:get_address()
-        end)
-    end
-
     if state == IDLE then
         if onGround then jumpCount = 0; levitatedSinceGround = false end
 
@@ -554,10 +564,11 @@ re.on_application_entry("LateUpdateBehavior", function()
                         human:call("forceChangeDrawingWeapon", true)
                     end
                 end)
-                create_action(human)
+                local created = create_action(human)
                 apply_params(lev)
                 g_freshCast = true
-                if has_cached_action() and action_start() then
+                if created and action_start() then
+                    -- Pin the mod-owned action's refcount so the engine doesn't free it mid-levitation.
                     pcall(function() cachedAction:write_dword(0x8, 2) end)
                     pcall(function() c_start:call(lev, Vector3f.new(0.0, RISE_START_SPEED, 0.0)) end)
                     action_update()
@@ -587,7 +598,7 @@ re.on_application_entry("LateUpdateBehavior", function()
 end)
 
 re.on_draw_ui(function()
-    if not imgui.collapsing_header("Levitate For All Weapons") then return end
+    if not imgui.tree_node("Better Levitate For All Weapons") then return end
 
     local changed, v
     changed, v = imgui.checkbox("Enable levitate for all weapons", cfg.allWeapons)

@@ -106,6 +106,9 @@ jobs:
             reframework/autorun/AugmentsUnleashed.lua \
             reframework/data/AugmentsUnleashed.json
 
+          make_zip BetterLevitateForAllWeapons \
+            reframework/autorun/BetterLevitateForAllWeapons.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
