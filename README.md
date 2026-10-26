@@ -8,8 +8,8 @@ This collection of mods can also be found in [NexusMods](https://www.nexusmods.c
 ## Fixed Mods 
 
 ### [Shut Up Pawns](https://www.nexusmods.com/dragonsdogma2/mods/248) by [emoose](https://www.nexusmods.com/dragonsdogma2/users/1439296)
-> Can stop pawns from commenting on every ladder & chest they see, or any other annoying lines they decide to spout.
-> Also allows blocking high fives after battles, in case you've had enough of them taking control of your character every time.
+> Can stop pawns from commenting on every ladder & chest they see, or any other annoying lines they decide to spout. 
+> Also allows blocking high fives after battles, in case you've had enough of them taking control of your character every time. 
 > High fives can be setup to only allow after boss fights, or after a certain battle duration. You can also set high fives to be always allowed for your main pawn while keeping sub-pawn high fives blocked, to help with main pawn affection gain.
 - Completely gutted the old ID system to use exact messages instead (IDs are no longer used in DD2)
 - Fixed errors involving PopStyleColor() and TreePop()
@@ -38,7 +38,8 @@ Technically the game has an option to hide the helmets of both your MC and your 
 - Added options to (properly) disable itself during cutscenes and while in menus
 
 ### [Carry It For Me](https://www.nexusmods.com/dragonsdogma2/mods/284) by [lingsamuel](https://www.nexusmods.com/dragonsdogma2/users/21480414)
-> My dear pawn, could you please carry it for me?
+> My dear pawn, could you please carry it for me? 
+>
 > This mod will auto give items to your pawns if they will not be Heavy after carrying it.
 - Updated to support Dark Arisen
 - Now uses a fallback snapshot of the player's inventory to check what item was added should old methods fail
@@ -50,16 +51,16 @@ Technically the game has an option to hide the helmets of both your MC and your 
 
 ### [EkiToolsBox](https://www.nexusmods.com/dragonsdogma2/mods/411) by [Ekibunnel](https://www.nexusmods.com/dragonsdogma2/users/4522098)
 > Feature:
->    Infinite Stamina
->        Choose between [Always], Always [ExceptOnSkills], only when [OutOfBattle] or [Off]
->    Infinite Lantern Oil
->        [On] or [Off]
->    Infinite NPC Carry Time
->        Choose between [On], On but [StillResist] or [Off]
->    Character
->        Select which parts of the armor to visually hide
->        Hide Lantern
->        Tweak or Disable DragonGrade (A.k.a Dragonforged Effect or Wyrmfire Upgrade), a value 0.0 will hide it.
+> - Infinite Stamina
+>   - Choose between [Always], Always [ExceptOnSkills], only when [OutOfBattle] or [Off]
+> - Infinite Lantern Oil
+>   - [On] or [Off]
+> - Infinite NPC Carry Time
+>   - Choose between [On], On but [StillResist] or [Off]
+> - Character
+>   - Select which parts of the armor to visually hide
+>   - Hide Lantern
+>   - Tweak or Disable DragonGrade (A.k.a Dragonforged Effect or Wyrmfire Upgrade), a value 0.0 will hide it.
 - Added unique IMGUI IDs to fix conflicts
 - Fixed outdated references
 - Fixed fur toggle that was also changing dragon forged opacity
@@ -97,12 +98,13 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 
 ### [Augments Unleashed](https://www.nexusmods.com/dragonsdogma2/mods/559) by [K1ng4](https://www.nexusmods.com/dragonsdogma2/users/120273023)
 > __Limitless Active Augments__
-> Arisen and his main pawn no longer limited to 6 augments.
-> You can have up your hearts content amount of augments for you and your pawn.
-> It won't touch the vanilla augments you got, and should still take effect if you enabled them in game.
+> - Arisen and his main pawn no longer limited to 6 augments.
+> - You can have up your hearts content amount of augments for you and your pawn.
+> - It won't touch the vanilla augments you got, and should still take effect if you enabled them in game.
+> 
 > __Customizable Augments Overhaul__
-> It dose nothing by itself, it allow you to overhaul your own augments, can be toggle on and off.
-> Compatible with other pak overhaul, but override them as soon as you change the value in mine.
+> - It dose nothing by itself, it allow you to overhaul your own augments, can be toggle on and off.
+> - Compatible with other pak overhaul, but override them as soon as you change the value in mine.
 - Updated to latest REFramework scripting
 - Made helper functions local (could conflict with other mods otherwise)
 - Used examples from AdvancedPawnSearch to do Get/Set methods within the array
@@ -122,7 +124,8 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 - Added Dark Arisen augments (player only) and Lupinity is the only one editable.
 
 ### [Better Levitate](https://www.nexusmods.com/dragonsdogma2/mods/255) & [Levitate For All Weapons](https://www.nexusmods.com/dragonsdogma2/mods/725) by [NeroNRM](https://www.nexusmods.com/dragonsdogma2/users/60964521)
-> You can now levitate with all weapons
+> You can now levitate with all weapons. 
+> 
 > A better faster and more versatile Levitate!
 
 - Renamed the script to `BetterLevitate
