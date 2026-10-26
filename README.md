@@ -161,8 +161,8 @@ At first this mod was broken in that it'd crash the game should you use this mod
 - Fixes crashes introduced when using a combination of LT + RB + face buttons
   - Crash is due to the mod trying to overwrite the text in the ability palette
   - The game is trying to do activation animations and the mod breaks the memory address to the text
-  - Due to this, RB **always has priority** 
-- RB > LT > face button = player abilities
-- LT > RB > face button = player abilities
-- LT > face button = pawn abilities (if you press RB, you must reset the hold on LT to make commands)
-- Purposefully out any changes since the hold button was implemented (don't care for camera controls or modifying pawn behavior as that just feels broken and incompatible with other mods)
+- RB **always has priority** 
+  - RB > LT > face button = player abilities
+  - LT > RB > face button = player abilities
+  - LT > face button = pawn abilities (if you press RB, you must reset the hold on LT to make commands)
+- Purposefully left out any changes since the hold button was implemented (don't care for camera controls or modifying pawn behavior as that just feels broken and incompatible with other mods)

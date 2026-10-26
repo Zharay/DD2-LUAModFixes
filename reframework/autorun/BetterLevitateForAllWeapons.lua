@@ -625,4 +625,5 @@ re.on_draw_ui(function()
         imgui.text(string.format("Normal (game) values: Height %.1f, Duration %.1fs",
             NORMAL.MaxHeight, NORMAL.MaxKeepSec))
     end
+    imgui.tree_pop()
 end)
