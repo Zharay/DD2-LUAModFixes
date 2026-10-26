@@ -128,7 +128,7 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 > 
 > A better faster and more versatile Levitate!
 
-- Renamed the script to `BetterLevitate
+- Renamed the script to `BetterLevitateForAllWeapons.lua`
 - Fixed outdated offsets by removing the hard coded values with ones obtained when the game loads
 - Removed `startFreeFallJump` check as it no longer exists. Wasn't really needed anyway.
 - Removed memory writing to fields that could be freed while in use

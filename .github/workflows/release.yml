@@ -109,6 +109,9 @@ jobs:
           make_zip BetterLevitateForAllWeapons \
             reframework/autorun/BetterLevitateForAllWeapons.lua
 
+          make_zip PawnOrders \
+            reframework/autorun/PawnOrders.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
