@@ -137,10 +137,12 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 - Note: `create_action` would crash if I tried using a dynamically obtained offset value. So I stuck with `0x20`. Everywhere else is fine.
 
 ## Working but Optimized Mods
-These are mods that are working but have issues that irked me to hell.
+These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.
 
 ### [Clock](https://www.nexusmods.com/dragonsdogma2/mods/150) by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318)
 This mod is technically working but by the brine does it eat up resources at high FPS. It accounts for 10% of the game's tick cycle alone! Now its more like 1%.
+
+**Note:** This mod has since been updated by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318) and is now optimized. I'll keep it here since this was the first mod that made me learn about REFramework and LUA scripting and how god awful `on_tick` functions are to game performance.
 
 - Optimized the heck out of it.
 - Got rid of seconds. It was never needed.
@@ -151,3 +153,16 @@ This mod is technically working but by the brine does it eat up resources at hig
 - Added ability to disable the clock during cutscenes (tho what the game counts as cutscenes is spotty)
   - This check is done every 0.5 sec as it is costly otherwise
 - Now waits until player is loaded and ready before displaying anything on screen. Clears it when it is not.
+
+### [Specific Pawn Orders](https://www.nexusmods.com/dragonsdogma2/mods/1851) by [DreamIris](https://www.nexusmods.com/dragonsdogma2/users/67406261)
+At first this mod was broken in that it'd crash the game should you use this mod with Archer and Magick Bow players. The held inputs I helped them implement works, but the changes I made were specifically tailored to not break mods such as [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360). I've kept mine since, fixing bugs along the way.
+
+- Is compatible with [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360) and [Double Jump and Dodge](https://www.nexusmods.com/dragonsdogma2/mods/1586)
+- Fixes crashes introduced when using a combination of LT + RB + face buttons
+  - Crash is due to the mod trying to overwrite the text in the ability palette
+  - The game is trying to do activation animations and the mod breaks the memory address to the text
+  - Due to this, RB **always has priority** 
+- RB > LT > face button = player abilities
+- LT > RB > face button = player abilities
+- LT > face button = pawn abilities (if you press RB, you must reset the hold on LT to make commands)
+- Purposefully out any changes since the hold button was implemented (don't care for camera controls or modifying pawn behavior as that just feels broken and incompatible with other mods)
