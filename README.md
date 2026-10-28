@@ -134,9 +134,20 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 - Should an update come and change the memory addresses, the game will not crash but report an error instead.
 - REFramework ScriptUI entry now uses `tree_node` as its header instead of `collapsing_header`. Conforms it to everything else's size.
 - Note: `create_action` would crash if I tried using a dynamically obtained offset value. So I stuck with `0x20`. Everywhere else is fine.
-- Initializing free fall now uses `FallLoop` which I borrowed from [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360) and [FreeClimb Enhanced](https://www.nexusmods.com/dragonsdogma2/mods/1528)
-- Once cancelled, we check if the player is in a proper free fall. If not we retry
-- Added option to cancel the above check, allowing you to actually combine this mod with another mobility mod (now you can do levitate > double jump via [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360)!)
+- Initializing free fall now uses `FallLoop` which how [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360) and [FreeClimb Enhanced](https://www.nexusmods.com/dragonsdogma2/mods/1528) does it
+- Once canceled, we check if the player is in a proper free fall. If not we retry until 2 seconds have passed
+- Added option to cancel the above check with a jump input, allowing you to actually combine this mod with another mobility mod (now you can do levitate > double jump via [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360)!)
+
+### [Mouse Wheel Camera Distance](https://www.nexusmods.com/dragonsdogma2/mods/152) by [emoose](https://www.nexusmods.com/dragonsdogma2/users/1439296)
+> Change camera distance via mousewheel & gamepad analog stick, similar to some other third-person games.
+
+This mod was in a half working state. Mouse inputs worked but gamepad inputs were obsolete.
+
+- Renamed script to `MouseWheelCameraDistance.lua`
+- Cleaned out old/outdated input system for [_ScriptCore](https://www.nexusmods.com/dragonsdogma2/mods/30)'s hotkey system
+- We now obtain our managers safely instead of blindly attaching at start
+- Gamepad input now has 3 options: Disabled, "LB + RSUp/RSDown", and "LB + LT/RT"
+- **Side note:** The script has been cleaned up by over 40 lines now that it uses _ScriptCore.
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.

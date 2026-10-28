@@ -1,11 +1,12 @@
 -- DragonsDogma2 MouseWheel Camera Distance mod by emoose
 -- https://www.nexusmods.com/dragonsdogma2/mods/152
+-- Requires _ScriptCore's Hotkeys/Hotkeys (v1.3.54 or newer for current DD2 input support).
+-- Controls: wheel / Up / Down to zoom, LB + right stick or LB + LT (out) / RT (in), middle click / R3 to reset.
 
 -- User settings section
 -- Feel free to edit these here, or you can edit them from REFramework overlay during gameplay ("Script Generated UI" > "MouseWheel Camera")
 
--- If you'd like RequireCtrlKey to use a different bind than CTRL+MouseWheel, you can search for via.hid.KeyboardKey.Control in the code section below and change it
---   (eg. use via.hid.KeyboardKey.Menu to make it ALT+MouseWheel)
+-- RequireCtrlKey and DisallowCtrlKey affect only the mouse wheel and middle-click reset.
 
 local DefaultConfig = {
     CameraMinDistance = -3.0,
@@ -16,13 +17,27 @@ local DefaultConfig = {
     ResetDistanceOnMiddleClick = true, -- resets camera distance on middle-click / right-stick (same as the default binding for games "reset camera" hotkey)
     RequireCtrlKey = false, -- if set to true, will only have an effect when used with CTRL key held
     DisallowCtrlKey = false, -- if using another mousewheel mod that uses CTRL+MouseWheel, enable this to stop camera from seeing inputs meant for that mod
-    EnableGamePad = true, -- if enabled, camera can be controlled by pressing LB + RSUp/RSDown (press RS to reset camera)
+    GamePadMode = "LB + RSUp/RSDown", -- Disabled, LB + RSUp/RSDown, or LB + LT/RT (press RS to reset in either enabled mode)
     KeyZoomIn = "Up", -- optional key binding to zoom in
     KeyZoomOut = "Down" -- optional key binding to zoom out
 }
 
 -- Code section
+local hotkeys = require("Hotkeys/Hotkeys")
 local Config = {}
+local gamepad_modes = {"Disabled", "LB + RSUp/RSDown", "LB + LT/RT"}
+
+local function gamepad_mode_index(mode)
+    for i, value in ipairs(gamepad_modes) do
+        if value == mode then
+            return i
+        end
+    end
+end
+
+local function clamp(value, minimum, maximum)
+    return math.min(math.max(value, minimum), maximum)
+end
 
 local function config_reset()
     Config = {}
@@ -34,77 +49,69 @@ end
 local function config_load()
     config_reset()
     
-    local config = json.load_file("dd2_mousewheel_cameradistance.json") or {}
-    for k, v in pairs(config) do
-        Config[k] = v
+    local config = json.load_file("dd2_mousewheel_cameradistance.json")
+    if config == nil then
+        return
+    end
+    if type(config) ~= "table" then
+        log.error("[MouseWheel Camera] Invalid config; using defaults")
+        return
+    end
+    for k, default in pairs(DefaultConfig) do
+        local value = config[k]
+        if value ~= nil then
+            if type(value) == type(default)
+                and (type(value) ~= "number" or (value == value and math.abs(value) < math.huge)) then
+                Config[k] = value
+            else
+                log.error("[MouseWheel Camera] Invalid setting " .. k .. "; using default")
+            end
+        end
+        if config.GamePadMode == nil and config.EnableGamePad ~= nil then
+            if type(config.EnableGamePad) == "boolean" then
+                Config.GamePadMode = config.EnableGamePad and "LB + RSUp/RSDown" or "Disabled"
+            else
+                log.error("[MouseWheel Camera] Invalid legacy EnableGamePad setting; using default mode")
+            end
+        end
+        if not gamepad_mode_index(Config.GamePadMode) then
+            log.error("[MouseWheel Camera] Invalid GamePadMode; using default mode")
+            Config.GamePadMode = DefaultConfig.GamePadMode
+        end
+    end
+    if Config.CameraMinDistance > Config.CameraMaxDistance then
+        log.error("[MouseWheel Camera] Min distance exceeds max distance; using default bounds")
+        Config.CameraMinDistance = DefaultConfig.CameraMinDistance
+        Config.CameraMaxDistance = DefaultConfig.CameraMaxDistance
+    end
+    for _, key in ipairs({"WheelStepDistance", "CameraSpeed"}) do
+        if Config[key] <= 0 then
+            log.error("[MouseWheel Camera] Invalid setting " .. key .. "; using default")
+            Config[key] = DefaultConfig[key]
+        end
     end
 end
 
 config_load()
 
-local via_hid_mouse = sdk.get_native_singleton("via.hid.Mouse")
-local via_hid_mouse_typedef = sdk.find_type_definition("via.hid.Mouse")
-local via_hid_keyboard = sdk.get_native_singleton("via.hid.Keyboard")
-local via_hid_keyboard_typedef = sdk.find_type_definition("via.hid.Keyboard")
-local via_hid_keyboardkey_typedef = sdk.find_type_definition("via.hid.KeyboardKey")
-local via_hid_gamepad = sdk.get_native_singleton("via.hid.GamePad")
-local via_hid_gamepad_typedef = sdk.find_type_definition("via.hid.GamePad")
-local app_CameraManager = sdk.get_managed_singleton("app.CameraManager")
-local app_MainFlowManager = sdk.get_managed_singleton("app.MainFlowManager")
-local app_PauseManager = sdk.get_managed_singleton("app.PauseManager")
-local app_GuiManager = sdk.get_managed_singleton("app.GuiManager")
+local app_CameraManager
+local app_MainFlowManager
+local app_PauseManager
+local app_GuiManager
 
--- Mouse/keyboard input code from https://gist.github.com/praydog/31317fef2a2f3d0670a68560ed0aa7e0
---generate enums
-local function generate_statics(typename)
-    local t = sdk.find_type_definition(typename)
-    if not t then
-        return {}
+local keyboard_aliases = {Menu = "Alt", LMenu = "LAlt", RMenu = "RAlt", DefinedEnter = "Enter"}
+local function key_down(name)
+    if name == "Shift" then
+        return hotkeys.check_kb_key("LShift", true) or hotkeys.check_kb_key("RShift", true)
     end
-
-    local fields = t:get_fields()
-    local enum = {}
-
-    for i, field in ipairs(fields) do
-        if field:is_static() then
-            local name = field:get_name()
-            local raw_value = field:get_data(nil)
-
-            enum[name] = raw_value
-        end
-    end
-
-    return enum
+    return hotkeys.check_kb_key(keyboard_aliases[name] or name, true)
 end
-
-local function generate_statics_global(typename)
-    local parts = {}
-    for part in typename:gmatch("[^%.]+") do
-        table.insert(parts, part)
-    end
-    local global = _G
-    for i, part in ipairs(parts) do
-        if not global[part] then
-            global[part] = {}
-        end
-        global = global[part]
-    end
-    if global ~= _G then
-        local static_class = generate_statics(typename)
-
-        for k, v in pairs(static_class) do
-            global[k] = v
-            global[v] = k
-        end
-    end
-    return global
-end
-
-generate_statics_global("via.hid.MouseButton")
-generate_statics_global("via.hid.KeyboardKey")
-generate_statics_global("via.hid.GamePadButton")
 
 local function is_input_enabled()
+    app_MainFlowManager = app_MainFlowManager or sdk.get_managed_singleton("app.MainFlowManager")
+    app_PauseManager = app_PauseManager or sdk.get_managed_singleton("app.PauseManager")
+    app_GuiManager = app_GuiManager or sdk.get_managed_singleton("app.GuiManager")
+
     -- disable updates if on mainmenu
     if app_MainFlowManager == nil or not app_MainFlowManager:get_IsInGamePhase() then
         return false
@@ -123,100 +130,66 @@ local function is_input_enabled()
     return true
 end
 
-local updates_enabled = true
+local updates_enabled = false
 
 local function update_hid(dt)
+    updates_enabled = false
     if not is_input_enabled() then
-        updates_enabled = false
         return
     end
     
     local wheel_delta = 0
+    local reset_distance = false
     
-    if Config.EnableGamePad then
-        local gamepad_device = sdk.call_native_func(via_hid_gamepad, via_hid_gamepad_typedef, "get_LastInputDevice")
-        if gamepad_device == nil then
-            gamepad_device = sdk.call_native_func(via_hid_gamepad, via_hid_gamepad_typedef, "get_Device")
-        end
-        if gamepad_device ~= nil then
-            if gamepad_device:call("isDown", via.hid.GamePadButton.LTrigTop) then
-                local rs = gamepad_device:get_AxisR()
-                if rs.y ~= 0 then
+    if Config.GamePadMode ~= "Disabled" and hotkeys.pad then
+        if hotkeys.check_pad_button("LB (L1)", true) then
+            if Config.GamePadMode == "LB + RSUp/RSDown" then
+                local rs = hotkeys.pad:call("get_AxisR")
+                if rs and rs.y ~= 0 then
                     wheel_delta = rs.y
-                    -- zero RStick.y so that game doesn't act on it
-                    gamepad_device:set_AxisR(Vector2f:new(rs.x,0))
+                    -- Consume only vertical look on the same merged device the game reads.
+                    hotkeys.pad:call("set_AxisR", Vector2f.new(rs.x, 0))
                 end
-            end
-            
-            if Config.ResetDistanceOnMiddleClick and gamepad_device:call("isDown", via.hid.GamePadButton.RStickPush) then
-                Config.CameraDistance = 0
-                wheel_delta = 0
+            elseif Config.GamePadMode == "LB + LT/RT" then
+                local zoom_out = hotkeys.check_pad_button("LT (L2)", true) and 1 or 0
+                local zoom_in = hotkeys.check_pad_button("RT (R2)", true) and 1 or 0
+                wheel_delta = zoom_in - zoom_out
             end
         end
+        reset_distance = Config.ResetDistanceOnMiddleClick and hotkeys.check_pad_button("R3", true)
     end
     
-    if Config.KeyZoomIn ~= "" or Config.KeyZoomOut ~= "" then
-        local ZoomIn_key = via_hid_keyboardkey_typedef:get_field(Config.KeyZoomIn)
-        local ZoomOut_key = via_hid_keyboardkey_typedef:get_field(Config.KeyZoomOut)
-        
-        if ZoomIn_key ~= nil or ZoomOut_key ~= nil then
-            local kb_device = sdk.call_native_func(via_hid_keyboard, via_hid_keyboard_typedef, "get_Device")
-            if ZoomIn_key ~= nil then
-                if kb_device:call("isDown", ZoomIn_key:get_data(nil)) then
-                    wheel_delta = 1.0
-                end
-            end
-            if ZoomOut_key ~= nil then
-                if kb_device:call("isDown", ZoomOut_key:get_data(nil)) then
-                    wheel_delta = -1.0
-                end
-            end
-        end
+    if key_down(Config.KeyZoomIn) then
+        wheel_delta = 1.0
+    end
+    if key_down(Config.KeyZoomOut) then
+        wheel_delta = -1.0
     end
     
     if wheel_delta ~= 0 then
         wheel_delta = (wheel_delta * 10) * dt
         Config.CameraDistance = Config.CameraDistance - (wheel_delta * Config.WheelStepDistance)
-        Config.CameraDistance = math.clamp(Config.CameraDistance, Config.CameraMinDistance, Config.CameraMaxDistance)
+        Config.CameraDistance = clamp(Config.CameraDistance, Config.CameraMinDistance, Config.CameraMaxDistance)
     end
     
-    local enabled = true
-    
-    if Config.RequireCtrlKey or Config.DisallowCtrlKey then
-        local kb_device = sdk.call_native_func(via_hid_keyboard, via_hid_keyboard_typedef, "get_Device")
-        local ctrl_pressed = kb_device:call("isDown", via.hid.KeyboardKey.Control)
+    local ctrl_pressed = key_down("Control")
+    updates_enabled = hotkeys.mouse ~= nil
+        and (not Config.RequireCtrlKey or not not ctrl_pressed)
+        and (not Config.DisallowCtrlKey or not ctrl_pressed)
 
-        if Config.RequireCtrlKey and not ctrl_pressed then
-            enabled = false
+    if updates_enabled then
+        wheel_delta = hotkeys.mouse:call("get_WheelDelta")
+        if wheel_delta ~= 0 then
+            Config.CameraDistance = Config.CameraDistance - (wheel_delta * Config.WheelStepDistance)
+            Config.CameraDistance = clamp(Config.CameraDistance, Config.CameraMinDistance, Config.CameraMaxDistance)
         end
-        
-        if Config.DisallowCtrlKey and ctrl_pressed then
-            enabled = false
+
+        if Config.ResetDistanceOnMiddleClick and hotkeys.check_mouse_button("M Mouse", true) then
+            reset_distance = true
         end
     end
-
-    -- update imgui status
-    if updates_enabled ~= enabled then
-        updates_enabled = enabled
-    end
-
-    if not enabled then
-        return
-    end
-
-    local mouse_device = sdk.call_native_func(via_hid_mouse, via_hid_mouse_typedef, "get_Device")
-    wheel_delta = mouse_device:get_WheelDelta()
-
-    if wheel_delta ~= 0 then
-        Config.CameraDistance = Config.CameraDistance - (wheel_delta * Config.WheelStepDistance)
-        Config.CameraDistance = math.clamp(Config.CameraDistance, Config.CameraMinDistance, Config.CameraMaxDistance)
-    end
-
-    if Config.ResetDistanceOnMiddleClick then
-        local mouse_middleclick = mouse_device:call("isDown", via.hid.MouseButton.C)
-        if mouse_middleclick then
-            Config.CameraDistance = 0
-        end
+    if reset_distance then
+        Config.CameraDistance = 0
     end
 end
 
@@ -227,6 +200,7 @@ re.on_application_entry("UpdateHID", function()
     
     update_hid(dt)
     
+    app_CameraManager = app_CameraManager or sdk.get_managed_singleton("app.CameraManager")
     if app_CameraManager == nil then
         return
     end
@@ -240,7 +214,7 @@ re.on_application_entry("UpdateHID", function()
     local distance_delta = Config.CameraDistance - cam_dist
     local interp_amount = (Config.CameraSpeed * 10) * dt
     if math.abs(distance_delta) > interp_amount then
-        cam_dist = cam_dist + interp_amount * math.sign(distance_delta)
+        cam_dist = cam_dist + (distance_delta > 0 and interp_amount or -interp_amount)
     else
         cam_dist = Config.CameraDistance
     end
@@ -281,13 +255,13 @@ re.on_draw_ui(function()
         imgui.separator()
 
         imgui.text("Min Camera Distance")
-        changed, Config.CameraMinDistance = imgui.slider_float("##mincamdist", Config.CameraMinDistance, -10, 100)
+        changed, Config.CameraMinDistance = imgui.slider_float("##mincamdist", Config.CameraMinDistance, -10, Config.CameraMaxDistance)
         if changed then
             has_unsaved_changes = true
         end
         
         imgui.text("Max Camera Distance")
-        changed, Config.CameraMaxDistance = imgui.slider_float("##maxcamdist", Config.CameraMaxDistance, -10, 100)
+        changed, Config.CameraMaxDistance = imgui.slider_float("##maxcamdist", Config.CameraMaxDistance, Config.CameraMinDistance, 100)
         if changed then
             has_unsaved_changes = true
         end
@@ -304,8 +278,11 @@ re.on_draw_ui(function()
             has_unsaved_changes = true
         end
 
-        changed, Config.EnableGamePad = imgui.checkbox("Enable Gamepad (LB + RSUp/RSDown)", Config.EnableGamePad)
+        imgui.text("Gamepad controls")
+        local gamepad_mode
+        changed, gamepad_mode = imgui.combo("##mousewheelcamera_gamepadmode", gamepad_mode_index(Config.GamePadMode), gamepad_modes)
         if changed then
+            Config.GamePadMode = gamepad_modes[gamepad_mode]
             has_unsaved_changes = true
         end
         
@@ -328,7 +305,7 @@ re.on_draw_ui(function()
         elseif not Config.RequireCtrlKey and Config.DisallowCtrlKey then
             ctrl_option_cur = 3
         end
-        
+        imgui.text("")
         imgui.text("CTRL key behavior")
         local changed, ctrl_setting = imgui.combo("##ctrlkey", ctrl_option_cur, ctrl_options)
         if changed then
@@ -354,16 +331,8 @@ re.on_draw_ui(function()
         imgui.text("  Config.RequireCtrlKey: " .. tostring(Config.RequireCtrlKey))
         imgui.text("  Config.DisallowCtrlKey: " .. tostring(Config.DisallowCtrlKey))
         imgui.text("  Wheel Enabled: " .. tostring(updates_enabled))
+        imgui.text("  Gamepad Available: " .. tostring(hotkeys.pad ~= nil))
 
         imgui.tree_pop()
     end
 end)
-
--- util functions
-function math.sign(x)
-    return x > 0 and 1 or x < 0 and -1 or 0
-end
-
-function math.clamp(x, min, max)
-    return math.min(math.max(x, min), max)
-end

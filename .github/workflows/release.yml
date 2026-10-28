@@ -112,6 +112,9 @@ jobs:
           make_zip PawnOrders \
             reframework/autorun/PawnOrders.lua
 
+          make_zip MouseWheelCameraDistance \
+            reframework/autorun/MouseWheelCameraDistance.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
