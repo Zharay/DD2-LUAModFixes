@@ -9,7 +9,8 @@ log.set_level("error")
 local _config={
     {name="Style",type="mutualbox"},
     {name="FontSize",type="int",default=60,min=1,max=250},
-    {name="Offset",type="intN",default={50,50},min=-300,max=8000},
+    {name="PositionPercent",label="Position (%)",type="floatN",default={50,5},min=0,max=100,step=0.1,
+        tip="Screen percentages for the text midpoint. X = 50 centers horizontally; Y = 5 / 95 places it near the top / bottom."},
     {name="Color",type="rgba32",default=0xffEEEEEE},
     {name="BgColor",type="rgba32",default=0x88777777},
 
@@ -43,7 +44,12 @@ local config = {}
 for key,para in pairs(_config) do
     config[para.name]=para.default
 end
-config= recurse_def_settings(config, json.load_file(configfile) or {})
+local saved_config=json.load_file(configfile) or {}
+config= recurse_def_settings(config, saved_config)
+-- Keep the old position until text and screen dimensions are available for conversion.
+if type(saved_config.Offset)=="table" then
+    config.Offset=saved_config.Offset
+end
 
 local current_FontSize=config.FontSize
 local font=imgui.load_font("times.ttf", config.FontSize)
@@ -58,6 +64,10 @@ local next_player_poll=0
 
 --On setting Change
 local function OnChanged()
+    if config.Offset~=nil and (config.PositionPercent[1]~=50 or config.PositionPercent[2]~=5) then
+        config.Offset=nil
+        json.dump_file(configfile,config)
+    end
     if config.FontSize ~= current_FontSize then
         current_FontSize = config.FontSize
         local new_font = imgui.load_font("times.ttf", config.FontSize)
@@ -155,12 +165,10 @@ re.on_frame(function()
                     msg=msg:gsub("{a}", ampm)
                     cached_msg=msg
 
-                    if config.ShowBg==true then
-                        imgui.push_font(font)
-                        local size=imgui.calc_text_size(msg)
-                        imgui.pop_font()
-                        cached_w,cached_h=size.x,size.y
-                    end
+                    imgui.push_font(font)
+                    local size=imgui.calc_text_size(msg)
+                    imgui.pop_font()
+                    cached_w,cached_h=size.x,size.y
                 end
             end
         end
@@ -168,11 +176,30 @@ re.on_frame(function()
 
     if cached_msg==nil then return end
 
+    local display=imgui.get_display_size()
+    if display.x<=0 or display.y<=0 then return end
+    if config.Offset~=nil then
+        local x,y=config.Offset[1],config.Offset[2]
+        if type(x)=="number" and type(y)=="number"
+            and x==x and y==y and math.abs(x)<math.huge and math.abs(y)<math.huge then
+            config.PositionPercent={
+                (x+cached_w/2)/display.x*100,
+                (y+cached_h/2)/display.y*100,
+            }
+        else
+            log.error("["..modname.."] Invalid legacy Offset; using default percentage position")
+        end
+        config.Offset=nil
+        json.dump_file(configfile,config)
+    end
+    local x=display.x*config.PositionPercent[1]/100-cached_w/2
+    local y=display.y*config.PositionPercent[2]/100-cached_h/2
+
     imgui.push_font(font)
     if config.ShowBg==true then
-        draw.filled_rect(config.Offset[1]-5, config.Offset[2]-5, cached_w+10, cached_h+10, config.BgColor)
+        draw.filled_rect(x-5, y-5, cached_w+10, cached_h+10, config.BgColor)
     end
-    draw.text(cached_msg,config.Offset[1],config.Offset[2],config.Color)
+    draw.text(cached_msg,x,y,config.Color)
     imgui.pop_font()
 end)
 
