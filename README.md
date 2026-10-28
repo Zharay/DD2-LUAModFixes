@@ -127,14 +127,16 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 > You can now levitate with all weapons. 
 > 
 > A better faster and more versatile Levitate!
-
 - Renamed the script to `BetterLevitateForAllWeapons.lua`
 - Fixed outdated offsets by removing the hard coded values with ones obtained when the game loads
-- Removed `startFreeFallJump` check as it no longer exists. Wasn't really needed anyway.
+- Removed `startFreeFallJump` check as it no longer exists.
 - Removed memory writing to fields that could be freed while in use
 - Should an update come and change the memory addresses, the game will not crash but report an error instead.
 - REFramework ScriptUI entry now uses `tree_node` as its header instead of `collapsing_header`. Conforms it to everything else's size.
 - Note: `create_action` would crash if I tried using a dynamically obtained offset value. So I stuck with `0x20`. Everywhere else is fine.
+- Initializing free fall now uses `FallLoop` which I borrowed from [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360) and [FreeClimb Enhanced](https://www.nexusmods.com/dragonsdogma2/mods/1528)
+- Once cancelled, we check if the player is in a proper free fall. If not we retry
+- Added option to cancel the above check, allowing you to actually combine this mod with another mobility mod (now you can do levitate > double jump via [Better Mobility](https://www.nexusmods.com/dragonsdogma2/mods/1360)!)
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.

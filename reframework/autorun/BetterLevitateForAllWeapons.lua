@@ -18,6 +18,7 @@ hk.setup_hotkeys(lss.hotkeys, default_hotkeys)
 -- ===================== DEFAULT SETTINGS (edit here) =====================
 -- Levitate for all weapons:
 local DEFAULT_ALL_WEAPONS     = false    -- let every weapon levitate (not just Sorcerer/Mage)
+local DEFAULT_FREE_FALL_CANCEL = false  -- a fresh jump press during the post-cancel fall stops the fall retries
 
 -- Better Levitate (custom levitation values):
 local DEFAULT_BETTER_LEVITATE = true   -- false = vanilla values, true = the values below
@@ -33,6 +34,7 @@ local CFG_FILE = "BetterLevitate.json"
 local cfg = json.load_file(CFG_FILE) or {}
 if cfg.enabled == nil then cfg.enabled = DEFAULT_BETTER_LEVITATE end
 if cfg.allWeapons == nil then cfg.allWeapons = DEFAULT_ALL_WEAPONS end
+if cfg.allowFreeFallCancel == nil then cfg.allowFreeFallCancel = DEFAULT_FREE_FALL_CANCEL end
 cfg.MaxHeight  = cfg.MaxHeight  or BETTER.MaxHeight
 cfg.MaxKeepSec = cfg.MaxKeepSec or BETTER.MaxKeepSec
 cfg.MoveSpeed  = cfg.MoveSpeed  or BETTER.MoveSpeed
@@ -376,6 +378,51 @@ local g_levActive = false
 local g_riseHold = false
 local g_grabbed = false
 
+-- Cancelling only stops the levitation, so the player needs the game's own fall action.
+local FALL_REQUEST_SIG = "requestActionCore(app.ActionManager.Priority, System.String, System.UInt32)"
+local FALL_RETRY_SEC   = 0.25
+local FALL_WATCH_SEC   = 2.0
+local g_fallWatch = nil
+
+local function get_player_y(chara)
+    local y
+    pcall(function() y = chara:call("get_Transform"):call("get_Position").y end)
+    return y
+end
+
+local function request_fall_action(chara)
+    local ok = pcall(function()
+        local am = chara:call("get_ActionManager")
+        if not am then error("no ActionManager") end
+        am:call(FALL_REQUEST_SIG, 0, "FallLoop", 0)
+    end)
+    return ok
+end
+
+local function start_fall_watch(human)
+    local chara
+    pcall(function() chara = human:call("get_Chara()") end)
+    if not chara then return end
+    local now = os.clock()
+    request_fall_action(chara)
+    g_fallWatch = { t0 = now, nextCheck = now + FALL_RETRY_SEC, y = get_player_y(chara) }
+end
+
+local function update_fall_watch(chara, onGround)
+    local w = g_fallWatch
+    if not w then return end
+    local now = os.clock()
+    if onGround or not chara or now - w.t0 > FALL_WATCH_SEC then
+        g_fallWatch = nil
+        return
+    end
+    if now < w.nextCheck then return end
+    w.nextCheck = now + FALL_RETRY_SEC
+    local y = get_player_y(chara)
+    if y and w.y and y >= w.y - 0.02 then request_fall_action(chara) end
+    w.y = y
+end
+
 local function request_fall(lev, human)
     if g_forceFall then return end
     g_forceFall = true
@@ -387,6 +434,9 @@ local function request_fall(lev, human)
     end)
     pcall(function() lev:set_field("<IsActive>k__BackingField", false) end)
     pcall(function() c_end:call(lev) end)
+    if human and (not g_fallWatch or os.clock() - g_fallWatch.t0 > FALL_WATCH_SEC) then
+        start_fall_watch(human)
+    end
 end
 
 local function apply_turn(human, dbg)
@@ -533,6 +583,14 @@ re.on_application_entry("LateUpdateBehavior", function()
 
     local chara_for_ground = human:call("get_Chara()")
     local onGround = is_grounded(human, chara_for_ground, ctrl)
+    update_fall_watch(chara_for_ground, onGround)
+
+    -- Hand control back so other mods (e.g. a double jump) can act without the FallLoop retry overriding them.
+    if g_fallWatch and cfg.allowFreeFallCancel
+       and (hk.check_hotkey("Jump", false, true) or hk.check_hotkey("Jump2", false, true)) then
+        g_fallWatch = nil
+        if state == ACTIVE then state = IDLE; jumpCount = 0 end
+    end
 
     if g_forceFall then
         local active = false
@@ -567,6 +625,7 @@ re.on_application_entry("LateUpdateBehavior", function()
                 local created = create_action(human)
                 apply_params(lev)
                 g_freshCast = true
+                g_fallWatch = nil
                 if created and action_start() then
                     -- Pin the mod-owned action's refcount so the engine doesn't free it mid-levitation.
                     pcall(function() cachedAction:write_dword(0x8, 2) end)
@@ -584,7 +643,8 @@ re.on_application_entry("LateUpdateBehavior", function()
     elseif state == ACTIVE then
         activeFrames = activeFrames + 1
 
-        action_update()
+        -- Updating the levitate action after a cancel would pull the player back into its hover routine.
+        if not g_fallWatch then action_update() end
 
         if hk.check_hotkey("CancelLevitation", true) or hk.check_hotkey("CancelLevitation2", true) then
             request_fall(lev, human)
@@ -603,6 +663,12 @@ re.on_draw_ui(function()
     local changed, v
     changed, v = imgui.checkbox("Enable levitate for all weapons", cfg.allWeapons)
     if changed then cfg.allWeapons = v; save_cfg() end
+
+    changed, v = imgui.checkbox("Allow free fall cancel", cfg.allowFreeFallCancel)
+    if changed then cfg.allowFreeFallCancel = v; save_cfg() end
+    if imgui.is_item_hovered() then
+        imgui.set_tooltip("After cancelling levitation, pressing Jump again stops the mod's fall retries\nso other actions (such as a double jump) can take over.")
+    end
 
     changed, v = imgui.checkbox("Better Levitate values", cfg.enabled)
     if changed then cfg.enabled = v; save_cfg() end
