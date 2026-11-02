@@ -467,7 +467,7 @@ re.on_draw_ui(function()
                 break
             end
         end
-        changed, distributionIndex = imgui.combo("Distribution rules", distributionIndex, DistributionRules)
+        changed, distributionIndex = imgui.combo("Distribution Rules", distributionIndex, DistributionRules)
         if changed then
             Config.DistributionRules = DistributionRules[distributionIndex]
         end

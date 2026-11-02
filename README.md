@@ -47,7 +47,10 @@ Technically the game has an option to hide the helmets of both your MC and your 
 - GetItemOption.EventType is now being used instead
 - Fixed a bug pertaining to event items never being filtered correctly
 - Fixed equipment not being passed to pawns
-- Now uses a proper round-robin distribution, spreading out the load until everyone else is full
+- Added 3 distribution options:
+  - Round-Robin - Same as always, evenly distribute items across entire party
+  - Pawns First - Round-Robin but pawns get them first until all are heavy
+  - Always Pawns - Will always choose pawns, skipping the player entirely
 
 ### [EkiToolsBox](https://www.nexusmods.com/dragonsdogma2/mods/411) by [Ekibunnel](https://www.nexusmods.com/dragonsdogma2/users/4522098)
 > Feature:
