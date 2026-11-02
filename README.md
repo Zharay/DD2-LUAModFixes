@@ -121,7 +121,7 @@ Untested as I am knee deep in snow of the DLC but everything that this mod used 
 - Fixed hard coded augment index ranges
 - Skip over errors involving missing JSON entries (this could've stopped the script hard)
 - Skip over IDs we do not recognize (must add missing Dark Arisen augments)
-- Added Dark Arisen augments (player only) and Lupinity is the only one editable.
+- Added Dark Arisen augments (player only), two of which are editable.
 
 ### [Better Levitate](https://www.nexusmods.com/dragonsdogma2/mods/255) & [Levitate For All Weapons](https://www.nexusmods.com/dragonsdogma2/mods/725) by [NeroNRM](https://www.nexusmods.com/dragonsdogma2/users/60964521)
 > You can now levitate with all weapons. 
@@ -148,6 +148,18 @@ This mod was in a half working state. Mouse inputs worked but gamepad inputs wer
 - We now obtain our managers safely instead of blindly attaching at start
 - Gamepad input now has 3 options: Disabled, "LB + RSUp/RSDown", and "LB + LT/RT"
 - **Side note:** The script has been cleaned up by over 40 lines now that it uses _ScriptCore.
+
+### [Fall Damage Manager](https://www.nexusmods.com/dragonsdogma2/mods/178) by [SilverEzredes](https://www.nexusmods.com/dragonsdogma2/users/75782263)
+> A LUA script for REFramework that enables the adjustment of fall damage parameters.
+
+The core of this mod simply needed an update to the parameters used and an update to the latest REFramework.
+
+- Renamed the script to `FallDamageManager.lua`
+- Updated object and fields to the ones used in Dark Arisen (`app.CharacterCommonFallParameter` > `app.CharacterCommonDamageParameter.FallParameter`)
+- The above fields are no longer flat, but nested with up to 6 fields each
+- `ForHuman` > `HumanParam` | `ForHumanVSCh258` > `HumanParamVSCh258` | `ForSmall` > `SmallCharaParam` and `SmallCharaParamInNRD` | `ForLarge` > `LargeCharaParam` and `LargeCharaParamInNRD`
+- Updated the affected parameters to also support characters in the moored world (`InNRD`)
+- Updated to latest REFramework IMGUI library
 
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.

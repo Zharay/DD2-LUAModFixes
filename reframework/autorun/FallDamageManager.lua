@@ -1,9 +1,9 @@
 --/////////////////////////////////////--
 -- Fall Damage Manager
 
--- Author: SilverEzredes
--- Updated: 03/31/2024
--- Version: v1.0.2
+-- Author: SilverEzredes + Jarol
+-- Updated: 11/01/2026
+-- Version: v1.0.3
 -- Special Thanks to: praydog; alphaZomega
 
 --/////////////////////////////////////--
@@ -108,6 +108,27 @@ local function get_CharacterManager()
 	return characterManager
 end
 
+-- Writes settings into an app.CharacterCommonDamageParameter.FallParameter.HumanDamageParameter
+local function apply_human_param(param, suffix)
+    if not param then return end
+    param.HeightDamage = fall_damage_settings["HeightDamageForHuman" .. suffix]
+    param.BaseDamage = fall_damage_settings["BaseDamageForHuman" .. suffix]
+    param.DamagePerHeight = fall_damage_settings["DamagePerHeightForHuman" .. suffix]
+    param.HeightDie = fall_damage_settings["HeightDieForHuman" .. suffix]
+end
+
+-- Writes settings into an app.CharacterCommonDamageParameter.FallParameter.ExceptHumanDamageParameter
+local function apply_except_human_param(param, size)
+    if not param then return end
+    param.HeightDamage = fall_damage_settings["HeightDamageFor" .. size]
+    param.BaseDamageRate = fall_damage_settings["BaseDamageRateFor" .. size]
+    param.HeightDamage_Normal = fall_damage_settings["HeightDamageFor" .. size .. "_Normal"]
+    param.BaseDamageRate_Normal = fall_damage_settings["BaseDamageRateFor" .. size .. "_Normal"]
+    param.DamageRatePerHeight = fall_damage_settings["DamageRatePerHeightFor" .. size]
+    param.HeightDie = fall_damage_settings["HeightDieFor" .. size]
+    param.HeightDie_Normal = fall_damage_settings["HeightDieFor" .. size .. "_Normal"]
+end
+
 local function update_PlayerFallDMG()
     if characterManager then
         local manualPlayer = characterManager:call("get_ManualPlayer()")
@@ -119,31 +140,14 @@ local function update_PlayerFallDMG()
                 local manualPlayer_FallDMGCalc_Param = manualPlayer_FallDMGCalc:get_field("<Param>k__BackingField")
 
                 if manualPlayer_FallDMGCalc_Param then
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForHuman = fall_damage_settings.HeightDamageForHuman
-                    manualPlayer_FallDMGCalc_Param.BaseDamageForHuman = fall_damage_settings.BaseDamageForHuman
-                    manualPlayer_FallDMGCalc_Param.DamagePerHeightForHuman = fall_damage_settings.DamagePerHeightForHuman
-                    manualPlayer_FallDMGCalc_Param.HeightDieForHuman = fall_damage_settings.HeightDieForHuman
+                    apply_human_param(manualPlayer_FallDMGCalc_Param:get_field("HumanParam"), "")
+                    apply_human_param(manualPlayer_FallDMGCalc_Param:get_field("HumanParamVSCh258"), "VSCh258")
 
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForHumanVSCh258 = fall_damage_settings.HeightDamageForHumanVSCh258
-                    manualPlayer_FallDMGCalc_Param.BaseDamageForHumanVSCh258 = fall_damage_settings.BaseDamageForHumanVSCh258
-                    manualPlayer_FallDMGCalc_Param.DamagePerHeightForHumanVSCh258 = fall_damage_settings.DamagePerHeightForHumanVSCh258
-                    manualPlayer_FallDMGCalc_Param.HeightDieForHumanVSCh258 = fall_damage_settings.HeightDieForHumanVSCh258
+                    apply_except_human_param(manualPlayer_FallDMGCalc_Param:get_field("SmallCharaParam"), "Small")
+                    apply_except_human_param(manualPlayer_FallDMGCalc_Param:get_field("SmallCharaParamInNRD"), "Small")
 
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForSmall = fall_damage_settings.HeightDamageForSmall
-                    manualPlayer_FallDMGCalc_Param.BaseDamageRateForSmall = fall_damage_settings.BaseDamageRateForSmall
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForSmall_Normal = fall_damage_settings.HeightDamageForSmall_Normal
-                    manualPlayer_FallDMGCalc_Param.BaseDamageRateForSmall_Normal = fall_damage_settings.BaseDamageRateForSmall_Normal
-                    manualPlayer_FallDMGCalc_Param.DamageRatePerHeightForSmall = fall_damage_settings.DamageRatePerHeightForSmall
-                    manualPlayer_FallDMGCalc_Param.HeightDieForSmall = fall_damage_settings.HeightDieForSmall
-                    manualPlayer_FallDMGCalc_Param.HeightDieForSmall_Normal = fall_damage_settings.HeightDieForSmall_Normal
-
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForLarge = fall_damage_settings.HeightDamageForLarge
-                    manualPlayer_FallDMGCalc_Param.BaseDamageRateForLarge = fall_damage_settings.BaseDamageRateForLarge
-                    manualPlayer_FallDMGCalc_Param.HeightDamageForLarge_Normal = fall_damage_settings.HeightDamageForLarge_Normal
-                    manualPlayer_FallDMGCalc_Param.BaseDamageRateForLarge_Normal = fall_damage_settings.BaseDamageRateForLarge_Normal
-                    manualPlayer_FallDMGCalc_Param.DamageRatePerHeightForLarge = fall_damage_settings.DamageRatePerHeightForLarge
-                    manualPlayer_FallDMGCalc_Param.HeightDieForLarge = fall_damage_settings.HeightDieForLarge
-                    manualPlayer_FallDMGCalc_Param.HeightDieForLarge_Normal = fall_damage_settings.HeightDieForLarge_Normal
+                    apply_except_human_param(manualPlayer_FallDMGCalc_Param:get_field("LargeCharaParam"), "Large")
+                    apply_except_human_param(manualPlayer_FallDMGCalc_Param:get_field("LargeCharaParamInNRD"), "Large")
                 end
             end
         end
@@ -166,7 +170,7 @@ re.on_draw_ui(function()
         end
         func.tooltip("Reset every parameter.")
         imgui.same_line()
-        imgui.button("|")
+        imgui.button("|##FDM_Spacer1")
         imgui.same_line()
         
         if imgui.button("Update Preset List") then
@@ -175,7 +179,7 @@ re.on_draw_ui(function()
         end
 
         imgui.same_line()
-        imgui.button("|")
+        imgui.button("|##FDM_Spacer2")
         imgui.same_line()
 
         if imgui.button("Save Preset") then
@@ -190,12 +194,14 @@ re.on_draw_ui(function()
             local selected_preset = FDM_PresetsTable[fall_damage_settings.current_preset_indx]
             local json_filepath = [[SILVER\\FallDamageManager\\]] .. selected_preset .. [[.json]]
             local temp_parts = json.load_file(json_filepath)
-            
-            temp_parts.Presets = nil
-            temp_parts.current_preset_indx = nil
 
-            for key, value in pairs(temp_parts) do
-                fall_damage_settings[key] = value
+            if temp_parts then
+                temp_parts.Presets = nil
+                temp_parts.current_preset_indx = nil
+
+                for key, value in pairs(temp_parts) do
+                    fall_damage_settings[key] = value
+                end
             end
         end
 
@@ -257,9 +263,9 @@ re.on_draw_ui(function()
 
         imgui.spacing()
 
-        ui.button_n_colored_txt("Current Version:", "v1.0.2 | 03/31/2024", 0xFF00FF00)
+        ui.textButton_ColoredValue("Current Version:", "v1.0.3 | 11/01/2026", 0xFF00FF00)
         imgui.same_line()
-        imgui.text("| by SilverEzredes")
+        imgui.text("| by SilverEzredes + Jarol")
 
         if changed or wc then
             json.dump_file("SILVER/FallDamage_Settings.json", fall_damage_settings)

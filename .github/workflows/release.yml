@@ -115,6 +115,9 @@ jobs:
           make_zip MouseWheelCameraDistance \
             reframework/autorun/MouseWheelCameraDistance.lua
 
+          make_zip FallDamageManager \
+            reframework/autorun/FallDamageManager.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
