@@ -64,7 +64,8 @@
         "51": "All: Advertence",
         "52": "All: Fortuity",
         "53": "All: Lupinity",
-        "54": "All: Proficiency"
+        "54": "All: Generosity",
+        "55": "All: Proficiency"
     },
     "AugmentDescribtions": {
         "4": "Increases the likelihood of being targeted by foes",
@@ -117,7 +118,8 @@
         "51": "Acquirable items dropped by foes you encounter are displayed on the minimap",
         "52": "You have a chance of acquiring an additional gold from treasure chests and meat from enemies",
         "53": "Reduces Stamina consumed by jumping and dashing while accompanying the hound",
-        "54": "Reduces Stamina consumed by 15% when performing advanced weapon skills. Partially stacks with Zeal."
+        "54": "Using items shares the effect to the whole party.",
+        "55": "Reduces Stamina consumed when performing advanced weapon skills. Partially stacks with Zeal."
     },
     "AugmentModDescriptions": {
         "4": "Increases the likelihood of being targeted by foes by [%f * Agression].",
@@ -170,7 +172,9 @@
         "51": "",
         "52": "Chance of acquiring additional gold from chests by %f and meat from enemies by %f.",
         "53": "Reduces Stamina consumed by jumping and dashing while accompanying the hound [Consumtion * %f].",
-        "54": "Reduces Stamina consumed by [Consumtion * %f] when performing advanced weapon skills. Partially stacks with Zeal."
+        "54": "Shares effect of items used with the whole party [Effect? Range? %f]",
+        "55": "Reduces Stamina consumed by [Consumtion * %f] when performing advanced weapon skills. Partially stacks with Zeal."
+        
     },
     "Augment_Overhual_Default_Settings": {
         "4": {
@@ -376,6 +380,11 @@
         "54": {
             "Value": 0.0,
             "Value2": 0.0
+        },
+        "55": {
+            "Value": 0.0,
+            "Value2": 0.0
         }
+
     }
 }

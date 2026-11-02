@@ -40,12 +40,13 @@ local dataAugmentsPawnEnabled = {}
 local dataDescriptiveMode = false
 
 local ABILITY_MIN = 4
-local ABILITY_MAX = 54
+local ABILITY_MAX = 55
 local PLAYER_ONLY_AUGMENTS = {
 	[51] = true,
 	[52] = true,
 	[53] = true,
 	[54] = true,
+	[55] = true
 }
 
 local function canUseAugment(id, isPawn)
