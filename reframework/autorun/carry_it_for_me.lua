@@ -11,6 +11,7 @@ local debug = false
 
 local function Log(message, level)
     level = level or "info"
+    if level == "info" and not debug then return end
     local previousLevel = log.get_level and log.get_level() or "error"
     log.set_level(level)
     local ok, err = pcall(log[level], "["..modname.."] "..message)
@@ -54,6 +55,13 @@ end
 
 if Config.ItemEvent == nil then
     Config.ItemEvent = 2 | 4 | 8 | 16
+end
+
+local DistributionRules = { "Round-Robin", "Pawns First", "Always Pawns" }
+if Config.DistributionRules ~= DistributionRules[1]
+    and Config.DistributionRules ~= DistributionRules[2]
+    and Config.DistributionRules ~= DistributionRules[3] then
+    Config.DistributionRules = DistributionRules[1]
 end
 
 
@@ -176,14 +184,29 @@ local function GetPawn(itemManager, extraWeight)
                 Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
                 return nil
             end
+            if Config.DistributionRules == DistributionRules[3] then
+                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
+                    .. " selected by Always Pawns")
+                return pawnChar
+            end
             local limit = itemManager:call("getWeightLimit(app.Character)", pawnChar)
             local weight = itemManager:call("getStorageWeight(app.Character)", pawnChar)
-            local rank = itemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
-            Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
-                .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
-                .. ", limit=" .. tostring(limit) .. ", rank=" .. tostring(rank))
-            if rank <= 2 then
-                return pawnChar
+            if Config.DistributionRules == DistributionRules[2] then
+                local currentRank = itemManager:call("getWeightRank(System.Single, System.Single)", weight, limit)
+                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
+                    .. " weight=" .. tostring(weight) .. ", limit=" .. tostring(limit)
+                    .. ", currentRank=" .. tostring(currentRank))
+                if currentRank <= 2 then
+                    return pawnChar
+                end
+            else
+                local resultingRank = itemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
+                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
+                    .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
+                    .. ", limit=" .. tostring(limit) .. ", resultingRank=" .. tostring(resultingRank))
+                if resultingRank <= 2 then
+                    return pawnChar
+                end
             end
             return nil
         end)
@@ -435,6 +458,19 @@ re.on_draw_ui(function()
         local changed = false
 
 		changed, Config.Enabled = imgui.checkbox("Enabled", Config.Enabled)
+        configChanged = configChanged or changed
+
+        local distributionIndex = 1
+        for i, rule in ipairs(DistributionRules) do
+            if Config.DistributionRules == rule then
+                distributionIndex = i
+                break
+            end
+        end
+        changed, distributionIndex = imgui.combo("Distribution rules", distributionIndex, DistributionRules)
+        if changed then
+            Config.DistributionRules = DistributionRules[distributionIndex]
+        end
         configChanged = configChanged or changed
 
         -- Item Category
