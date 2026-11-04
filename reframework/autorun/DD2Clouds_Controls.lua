@@ -7,6 +7,7 @@
 local INI = "DD2Clouds/dd2_clouds.ini"
 
 -- key, label, min, max, default (the shader's default when the ini has no line for it), integer?
+-- Light profiles are stored as <key>_day / <key>_night; the active profile is written to the original <key>.
 local SECTIONS = {
   { "Sky cover", {
     { "coverage", "Cover", 0.0, 1.0, 0.45 },
@@ -34,22 +35,39 @@ local SECTIONS = {
     { "density", "Density", 0.01, 0.4, 0.035 },
     { "churn", "Boil speed (m/s)", 0.0, 5.0, 0.6 },
   } },
-  { "Light", {
-    { "exposure", "Brightness", 0.2, 3.0, 1.0 },
-    { "sun_intensity", "Sunlight", 0.0, 10.0, 8.0 },
-    { "ambient", "Sky light", 0.0, 12.0, 2.2 },
-    { "base_dark", "Base sky light", 0.0, 1.0, 0.35 },
-    { "amb_occ", "Dark bellies", 0.0, 1.0, 0.8 },
-    { "amb_tint", "Sun tint in sky light", 0.0, 1.0, 0.5 },
-    { "bounce", "Ground bounce", 0.0, 0.5, 0.12 },
-    { "powder", "Powder (dark sun-side skin)", 0.0, 1.0, 0.6 },
-    { "ms", "Light through thick cloud", 0.0, 1.0, 0.5 },
-    { "phase_g", "Silver lining (forward glow)", 0.0, 0.95, 0.7 },
-    { "shadow", "Cloud shadows on the ground", 0.0, 1.0, 0.65 },
-    { "golden_tint", "Sunset colour in sky light", 0.0, 1.0, 0.65 },
-    { "golden_sun", "Sunset sunlight boost", 1.0, 4.0, 2.0 },
-    { "dusk_brightness", "Dusk / dawn brightness", 0.2, 4.0, 1.0 },
-    { "sky_floor", "Dusk floor (vs sky behind)", 0.0, 1.0, 0.3 },
+  { "Light (Day)", {
+    { "exposure_day", "Brightness", 0.2, 3.0, 1.0 },
+    { "sun_intensity_day", "Sunlight", 0.0, 10.0, 8.0 },
+    { "ambient_day", "Sky light", 0.0, 12.0, 2.2 },
+    { "base_dark_day", "Base sky light", 0.0, 1.0, 0.35 },
+    { "amb_occ_day", "Dark bellies", 0.0, 1.0, 0.8 },
+    { "amb_tint_day", "Sun tint in sky light", 0.0, 1.0, 0.5 },
+    { "bounce_day", "Ground bounce", 0.0, 0.5, 0.12 },
+    { "powder_day", "Powder (dark sun-side skin)", 0.0, 1.0, 0.6 },
+    { "ms_day", "Light through thick cloud", 0.0, 1.0, 0.5 },
+    { "phase_g_day", "Silver lining (forward glow)", 0.0, 0.95, 0.7 },
+    { "shadow_day", "Cloud shadows on the ground", 0.0, 1.0, 0.65 },
+    { "golden_tint_day", "Sunset colour in sky light", 0.0, 1.0, 0.65 },
+    { "golden_sun_day", "Sunset sunlight boost", 1.0, 4.0, 2.0 },
+    { "dusk_brightness_day", "Dusk / dawn brightness", 0.2, 4.0, 1.0 },
+    { "sky_floor_day", "Dusk floor (vs sky behind)", 0.0, 1.0, 0.3 },
+  } },
+  { "Light (Night)", {
+    { "exposure_night", "Brightness", 0.2, 3.0, 1.0 },
+    { "sun_intensity_night", "Sunlight", 0.0, 10.0, 8.0 },
+    { "ambient_night", "Sky light", 0.0, 12.0, 2.2 },
+    { "base_dark_night", "Base sky light", 0.0, 1.0, 0.35 },
+    { "amb_occ_night", "Dark bellies", 0.0, 1.0, 0.8 },
+    { "amb_tint_night", "Sun tint in sky light", 0.0, 1.0, 0.5 },
+    { "bounce_night", "Ground bounce", 0.0, 0.5, 0.12 },
+    { "powder_night", "Powder (dark sun-side skin)", 0.0, 1.0, 0.6 },
+    { "ms_night", "Light through thick cloud", 0.0, 1.0, 0.5 },
+    { "phase_g_night", "Silver lining (forward glow)", 0.0, 0.95, 0.7 },
+    { "shadow_night", "Cloud shadows on the ground", 0.0, 1.0, 0.65 },
+    { "golden_tint_night", "Sunset colour in sky light", 0.0, 1.0, 0.65 },
+    { "golden_sun_night", "Sunset sunlight boost", 1.0, 4.0, 2.0 },
+    { "dusk_brightness_night", "Dusk / dawn brightness", 0.2, 4.0, 1.0 },
+    { "sky_floor_night", "Dusk floor (vs sky behind)", 0.0, 1.0, 0.3 },
   } },
   { "Quality", {
     { "steps", "March steps", 16, 160, 64, true },
@@ -63,6 +81,19 @@ local lines, values, pending = {}, {}, {}
 local status = ""
 local live, last_change = true, 0
 local RECOMPILE = { res_div = true, enabled = true, sky_ibl = true }
+local LIGHT_KEYS = {}
+for _, sec in ipairs(SECTIONS) do
+  if sec[1] == "Light (Day)" then
+    for _, setting in ipairs(sec[2]) do
+      LIGHT_KEYS[#LIGHT_KEYS + 1] = {
+        key = setting[1]:match("^(.*)_day$"),
+        default = setting[5],
+      }
+    end
+  end
+end
+local active_is_night, exported_is_night = nil, nil
+local next_time_poll = 0
 
 local function parse_value(line)
   local key, val = line:match("^%s*([%w_]+)%s*=%s*([^#;\r]*)")
@@ -70,68 +101,123 @@ local function parse_value(line)
   return key, (val:gsub("%s+$", ""))
 end
 
-local function load()
-  lines, values = {}, {}
+local function read_file()
+  local new_lines, new_values = {}, {}
   local f = io.open(INI, "r")
-  if not f then status = "could not read " .. INI; return end
+  if not f then
+    lines, values = {}, {}
+    status = "could not read " .. INI
+    return false
+  end
   for line in f:lines() do
-    lines[#lines + 1] = line
+    new_lines[#new_lines + 1] = line
     local k, v = parse_value(line)
-    if k then values[k] = v end
+    if k then new_values[k] = v end
   end
   f:close()
-  pending = {}
+  lines, values = new_lines, new_values
   status = "loaded"
+  return true
+end
+
+local function load()
+  read_file()
+  pending = {}
 end
 
 -- replaces the value of each changed key in place (keeping its comment), appends keys the file did not have.
 -- The file is read again first: the panel's copy dates from when it opened, and writing it back would undo edits
 -- made since then by hand or by other tools.
-local function save()
-  local f = io.open(INI, "r")
-  if f then
-    lines = {}
-    for line in f:lines() do
-      lines[#lines + 1] = line
-      local k, v = parse_value(line)
-      if k then values[k] = v end
-    end
-    f:close()
-  end
+local function write(changes)
   local done = {}
   for i, line in ipairs(lines) do
     local k = parse_value(line)
-    if k and pending[k] ~= nil then
-      lines[i] = line:gsub("^(%s*[%w_]+%s*=%s*)[^#;\r]*", "%1" .. pending[k] .. " ", 1)
+    if k and changes[k] ~= nil then
+      lines[i] = line:gsub("^(%s*[%w_]+%s*=%s*)[^#;\r]*", "%1" .. changes[k] .. " ", 1)
       done[k] = true
     end
   end
-  for k, v in pairs(pending) do
-    if not done[k] then lines[#lines + 1] = k .. " = " .. v end
+  local append = {}
+  for k in pairs(changes) do
+    if not done[k] then append[#append + 1] = k end
   end
-  f = io.open(INI, "w")
-  if not f then status = "could not write " .. INI; return end
+  table.sort(append)
+  for _, k in ipairs(append) do lines[#lines + 1] = k .. " = " .. changes[k] end
+  local f = io.open(INI, "w")
+  if not f then status = "could not write " .. INI; return false end
   -- text mode: "\n" is written as CRLF ("\r\n" here made CR CR LF)
-  for _, line in ipairs(lines) do f:write((line:gsub("\r+$", "")), "\n") end
-  f:close()
+  for _, line in ipairs(lines) do
+    local ok, err = f:write((line:gsub("\r+$", "")), "\n")
+    if not ok then
+      f:close()
+      status = "could not write " .. INI .. ": " .. tostring(err)
+      return false
+    end
+  end
+  local ok, err = f:close()
+  if not ok then
+    status = "could not write " .. INI .. ": " .. tostring(err)
+    return false
+  end
   local slow = false
-  for k, v in pairs(pending) do
+  for k, v in pairs(changes) do
     values[k] = v
     slow = slow or RECOMPILE[k] == true
   end
-  pending = {}
   status = "applied at " .. os.date("%H:%M:%S") .. (slow and ": this one recompiles the shader (1-2 min)" or "")
-end
-
-local function current(key, default)
-  local v = pending[key] or values[key]
-  return tonumber(v) or default
+  return true
 end
 
 local function fmt(x, int)
   if int then return tostring(math.floor(x + 0.5)) end
   return string.format("%.4g", x)
 end
+
+local function save(force, include_pending)
+  if not force and next(pending) == nil then return false end
+  if include_pending == nil then include_pending = true end
+  read_file()
+  local changes = {}
+  if include_pending then
+    for k, v in pairs(pending) do changes[k] = v end
+  end
+  for _, setting in ipairs(LIGHT_KEYS) do
+    local key = setting.key
+    local day_key, night_key = key .. "_day", key .. "_night"
+    changes[day_key] = (include_pending and pending[day_key]) or values[day_key] or values[key] or fmt(setting.default)
+    changes[night_key] = (include_pending and pending[night_key]) or values[night_key] or values[key] or fmt(setting.default)
+    if active_is_night ~= nil then
+      changes[key] = active_is_night and changes[night_key] or changes[day_key]
+    end
+  end
+  if not write(changes) then return false end
+  if include_pending then pending = {} end
+  exported_is_night = active_is_night
+  return true
+end
+
+local function current(key, default)
+  local v = pending[key] or values[key]
+  if v == nil then
+    local base = key:match("^(.*)_day$") or key:match("^(.*)_night$")
+    if base then v = values[base] end
+  end
+  return tonumber(v) or default
+end
+
+re.on_frame(function()
+  local now = os.clock()
+  if now < next_time_poll then return end
+  next_time_poll = now + 1.0
+  local tm = sdk.get_managed_singleton("app.TimeManager")
+  if tm ~= nil then
+    local is_night = tm:isNight()
+    if type(is_night) == "boolean" then active_is_night = is_night end
+  end
+  if active_is_night ~= nil and active_is_night ~= exported_is_night then
+    save(true, false)
+  end
+end)
 
 re.on_draw_ui(function()
   if not imgui.tree_node("DD2 Clouds") then return end
