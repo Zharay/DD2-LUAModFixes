@@ -1,17 +1,17 @@
--- Authur K1ng4
+-- Author K1ng4
 -- Version 2.2
 -- This took me forever :D
 local re = re
 local sdk = sdk
 local json = json
 local ui = imgui
-local modname = "AugmentsUnleashed"
+local modName = "AugmentsUnleashed"
 local dataPath = "AugmentsUnleashed.json"
 local configPath = "AugmentsUnleashedConfig.json"
 -- 1 = Player, 2 = Pawn (index into the Augments Menu drop-list)
 local SelectedTarget = 1
 local AugmentsInfinityEnabled = false
-local AugmentsOverhualEnabled = false
+local AugmentsOverhaulEnabled = false
 local AbilitiesParam = {}
 local AbilitiesParamMod = {}
 local AbilitiesParamDefault = {}
@@ -19,22 +19,22 @@ local next = next
 local ModStrings = { 
 	["ModName"] = "Augments Unleashed",
 	["AugmentsMenu"] = "Augments Menu",
-	["DiscriptiveMode"] = "Discriptive Mode",
+	["DescriptiveMode"] = "Descriptive Mode",
 	["PlayerToggle"] = "Player Augments",
 	["PawnToggle"] = "Pawn Augments",
 	["TargetSelect"] = "Editing",
 	["EquippedTooltip"] = "Already equipped in-game for the current vocation.",
 	["AugmentsMenuNote"] = "Any augments past the default amount will not show in the game's menus.\nClose & open the Pause Menu to update the Status menu.",
-	["AugmentsOverhualMenu"] = "Augments Overhual Menu",
-	["AugmentsOverhualMenu_Label_Stat"] = "Stat",
-	["AugmentsOverhualModeEnable"] = "Enable",
-	["AugmentsOverhualModeSave"] = "Save",
-	["AugmentsOverhualModeReset"] = "Reset",
-	["AugmentsOverhualModeResetWarning"] = "I know all my custom augments overhual will reset to default."
+	["AugmentsOverhaulMenu"] = "Augments Overhaul Menu",
+	["AugmentsOverhaulMenu_Label_Stat"] = "Stat",
+	["AugmentsOverhaulModeEnable"] = "Enable",
+	["AugmentsOverhaulModeSave"] = "Save",
+	["AugmentsOverhaulModeReset"] = "Reset",
+	["AugmentsOverhaulModeResetWarning"] = "I know all my custom augments overhaul will reset to default."
 }
 local dataAugments = {}
-local dataAugmentsDescribtion = {}
-local dataAugmentsModDescribtion = {}
+local dataAugmentsDescription = {}
+local dataAugmentsModDescription = {}
 local dataAugmentsPlayerEnabled = {}
 local dataAugmentsPawnEnabled = {}
 local dataDescriptiveMode = false
@@ -66,7 +66,7 @@ local function Log(message, level)
     level = level or "info"
     local previousLevel = log.get_level and log.get_level() or "error"
     log.set_level(level)
-    local ok, err = pcall(log[level], "["..modname.."] "..message)
+    local ok, err = pcall(log[level], "["..modName.."] "..message)
     log.set_level(previousLevel)
     if not ok then error(err, 0) end
 end
@@ -147,11 +147,11 @@ local function CopyAbilitiesParam(copyParamTo)
 	return false
 end
 
-local function UpdateAbilitiesParam(copyedParam)
-	if copyedParam and next(AbilitiesParam) ~= nil then
+local function UpdateAbilitiesParam(copiedParam)
+	if copiedParam and next(AbilitiesParam) ~= nil then
 		for i = ABILITY_MIN, ABILITY_MAX do
 			local param = AbilitiesParam[tostring(i)]
-			local entry = copyedParam[tostring(i)]
+			local entry = copiedParam[tostring(i)]
 			if param and type(entry) == "table" then
 				if entry["Value"] ~= nil then param:set_field("Value", entry["Value"]) end
 				if entry["Value2"] ~= nil then param:set_field("Value2", entry["Value2"]) end
@@ -184,7 +184,7 @@ local function InitAbilitiesParam()
 			if entry["Value2"] == nil then entry["Value2"] = default["Value2"] end
 		end
 	end
-	if AugmentsOverhualEnabled then UpdateAbilitiesParam(AbilitiesParamMod) end
+	if AugmentsOverhaulEnabled then UpdateAbilitiesParam(AbilitiesParamMod) end
 	abilitiesParamInitialized = true
 	return true
 end
@@ -310,9 +310,9 @@ end
 local function getNativeEquipped(abilityContext, job, target)
 	local equipped = {}
 	if abilityContext == nil or job == nil then return equipped end
-	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
-	if currentEquiped == nil then return equipped end
-	local currentList = currentEquiped:get_field("Abilities")
+	local currentEquipped = abilityContext:call("getEquipAbilityList", job)
+	if currentEquipped == nil then return equipped end
+	local currentList = currentEquipped:get_field("Abilities")
 	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
 		local id = getAbilityValue(currentList, i)
 		reportUnknownAugment(id, i, job, target)
@@ -331,11 +331,11 @@ end
 
 -- Swaps the character's equipped ability array for one with the enabled augments added.
 -- When onlyIfStale is set, nothing is done if our array is already in place.
-local function updateEquipedList(state, abilityContext, job, enabledAugments, onlyIfStale)
+local function updateEquippedList(state, abilityContext, job, enabledAugments, onlyIfStale)
 	if abilityContext == nil or job == nil then return false end
-	local currentEquiped = abilityContext:call("getEquipAbilityList", job)
-	if currentEquiped == nil then return false end
-	local currentList = currentEquiped:get_field("Abilities")
+	local currentEquipped = abilityContext:call("getEquipAbilityList", job)
+	if currentEquipped == nil then return false end
+	local currentList = currentEquipped:get_field("Abilities")
 	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
 		reportUnknownAugment(getAbilityValue(currentList, i), i, job, state.target)
 	end
@@ -348,16 +348,16 @@ local function updateEquipedList(state, abilityContext, job, enabledAugments, on
 		state.init = true
 	end
 	applyAugments(state.list, enabledAugments, state.isPawn)
-	if not isOurList then currentEquiped:set_field("Abilities", state.list) end
+	if not isOurList then currentEquipped:set_field("Abilities", state.list) end
 	return true
 end
 
-local function updateEquipedListPlayer(onlyIfStale)
-	return updateEquipedList(PlayerAbilityState, GetPlayerAbilityContext(), GetPlayerJob(), dataAugmentsPlayerEnabled, onlyIfStale)
+local function updateEquippedListPlayer(onlyIfStale)
+	return updateEquippedList(PlayerAbilityState, GetPlayerAbilityContext(), GetPlayerJob(), dataAugmentsPlayerEnabled, onlyIfStale)
 end
 
-local function updateEquipedListPawn(onlyIfStale)
-	return updateEquipedList(PawnAbilityState, GetPawnAbilityContext(), GetPawnJob(), dataAugmentsPawnEnabled, onlyIfStale)
+local function updateEquippedListPawn(onlyIfStale)
+	return updateEquippedList(PawnAbilityState, GetPawnAbilityContext(), GetPawnJob(), dataAugmentsPawnEnabled, onlyIfStale)
 end
 
 local PawnID
@@ -375,15 +375,15 @@ local function save()
 	-- Data --
 	-- local saveData = {}
 	-- saveData["Augments"] = dataAugments
-	-- saveData["Augment_Describtions"] = dataAugmentsDescribtion
+	-- saveData["Augment_Descriptions"] = dataAugmentsDescription
 	-- json.dump_file(dataPath, saveData)
 	-- Config --
 	local saveConfig = {}
 	saveConfig["Player"] = dataAugmentsPlayerEnabled
 	saveConfig["Pawn"] = dataAugmentsPawnEnabled
 	saveConfig["DescriptiveMode"] = dataDescriptiveMode
-	saveConfig["AugmentsOverhualEnabled"] = AugmentsOverhualEnabled
-	saveConfig["AugmentsOverhualSettings"] = AbilitiesParamMod
+	saveConfig["AugmentsOverhaulEnabled"] = AugmentsOverhaulEnabled
+	saveConfig["AugmentsOverhaulSettings"] = AbilitiesParamMod
 	json.dump_file(configPath, saveConfig)
 end
 
@@ -445,7 +445,7 @@ re.on_draw_ui(function()
 
 		-- Augments Menu
 		if ui.tree_node(ModStrings["AugmentsMenu"]) then
-			-- local changed, value = ui.checkbox(ModStrings["AugmentsOverhualModeEnable"], AugmentsInfinityEnabled)
+			-- local changed, value = ui.checkbox(ModStrings["AugmentsOverhaulModeEnable"], AugmentsInfinityEnabled)
 			-- if changed then
 				-- AugmentsInfinityEnabled = value
 				-- save()
@@ -454,7 +454,7 @@ re.on_draw_ui(function()
 			ui.text_colored(ModStrings["AugmentsMenuNote"], 0xFF00D7FF)
 			ui.separator()
 
-			-- local changed, value = ui.checkbox(ModStrings["DiscriptiveMode"], dataDescriptiveMode)
+			-- local changed, value = ui.checkbox(ModStrings["DescriptiveMode"], dataDescriptiveMode)
 			-- if changed then
 			-- 	dataDescriptiveMode = value
 			-- 	save()
@@ -474,7 +474,7 @@ re.on_draw_ui(function()
 
 			local isPawnTarget = SelectedTarget == 2
 			local enabledAugments = isPawnTarget and dataAugmentsPawnEnabled or dataAugmentsPlayerEnabled
-			local updateEquipedListTarget = isPawnTarget and updateEquipedListPawn or updateEquipedListPlayer
+			local updateEquippedListTarget = isPawnTarget and updateEquippedListPawn or updateEquippedListPlayer
 			local okEquipped, nativeEquipped = pcall(function()
 				if isPawnTarget then return getNativeEquipped(GetPawnAbilityContext(), GetPawnJob(), "Main Pawn") end
 				return getNativeEquipped(GetPlayerAbilityContext(), GetPlayerJob(), "Player")
@@ -490,7 +490,7 @@ re.on_draw_ui(function()
 			for i = ABILITY_MIN, ABILITY_MAX do
 				if canUseAugment(i, isPawnTarget) then
 					local key = tostring(i)
-					local description = dataAugmentsDescribtion[key]
+					local description = dataAugmentsDescription[key]
 					local info = dataAugments[key] or ("Augment " .. key)
 					if dataDescriptiveMode and description then info = info .. " [" .. description .. "]" end
 					if not enabledAugments[key] then enabledAugments[key] = false end
@@ -515,7 +515,7 @@ re.on_draw_ui(function()
 						if description and ui.is_item_hovered() then setTooltip(description) end
 						if changed then
 							enabledAugments[key] = value
-							updateEquipedListTarget()
+							updateEquippedListTarget()
 							save()
 						end
 					end
@@ -528,16 +528,16 @@ re.on_draw_ui(function()
 		
 		
 		
-		-- Augments Overhual Menu
-		if ui.tree_node(ModStrings["AugmentsOverhualMenu"]) then
+		-- Augments Overhaul Menu
+		if ui.tree_node(ModStrings["AugmentsOverhaulMenu"]) then
 			if not InitAbilitiesParam() then
 				ui.text("Augment parameters are not available yet. Load into the game first.")
 			else
 			
-			local changed, value = ui.checkbox(ModStrings["AugmentsOverhualModeEnable"], AugmentsOverhualEnabled)
+			local changed, value = ui.checkbox(ModStrings["AugmentsOverhaulModeEnable"], AugmentsOverhaulEnabled)
 			if changed then
-				AugmentsOverhualEnabled = value
-				if AugmentsOverhualEnabled then
+				AugmentsOverhaulEnabled = value
+				if AugmentsOverhaulEnabled then
 					UpdateAbilitiesParam(AbilitiesParamMod)
 				else
 					UpdateAbilitiesParam(AbilitiesParamDefault)
@@ -567,7 +567,7 @@ re.on_draw_ui(function()
 					resetConfirm = false
 				end
 				
-				local changed, value = ui.checkbox(ModStrings["AugmentsOverhualModeResetWarning"], resetConfirm)
+				local changed, value = ui.checkbox(ModStrings["AugmentsOverhaulModeResetWarning"], resetConfirm)
 				if changed then
 					resetConfirm = value
 				end
@@ -582,20 +582,20 @@ re.on_draw_ui(function()
 				end
 			end
 
-			if AugmentsOverhualEnabled then
+			if AugmentsOverhaulEnabled then
 				-- Augments Active Mode
 				for i = ABILITY_MIN, ABILITY_MAX do
 					local key = tostring(i)
 					-- Augments the game has no parameter for can't be tuned.
 					if AbilitiesParamDefault[key] and AbilitiesParamMod[key] and ui.tree_node((dataAugments[key] or ("Augment " .. key)) .. "##Overhaul" .. key) then
 						local description = "Description: "
-						local descriptionMod = "Mod Machienic: "
+						local descriptionMod = "Mod Mechanic: "
 						local modValue = AbilitiesParamMod[key]["Value"]
 						local modValue2 = AbilitiesParamMod[key]["Value2"]
 						local defaultValue = AbilitiesParamDefault[key]["Value"]
 						local defaultValue2 = AbilitiesParamDefault[key]["Value2"]
-						description = description .. (dataAugmentsDescribtion[key] or "-")
-						local modFormat = dataAugmentsModDescribtion[key] or "Stat [1]: %f, Stat [2]: %f"
+						description = description .. (dataAugmentsDescription[key] or "-")
+						local modFormat = dataAugmentsModDescription[key] or "Stat [1]: %f, Stat [2]: %f"
 						local okFormat, formatted = pcall(string.format, descriptionMod .. modFormat, modValue, modValue2)
 						descriptionMod = okFormat and formatted or (descriptionMod .. modFormat)
 						ui.indent(20)
@@ -605,7 +605,7 @@ re.on_draw_ui(function()
 						if (tonumber(defaultValue) or 0) < 3 then slideMax = 10 end
 						if imgui.small_button("T:1") then uiInputState[i][1] = not uiInputState[i][1] end
 						ui.same_line()
-						local changed, value = ui.slider_float(ModStrings["AugmentsOverhualMenu_Label_Stat"] .. " [1]", modValue, 0, slideMax)
+						local changed, value = ui.slider_float(ModStrings["AugmentsOverhaulMenu_Label_Stat"] .. " [1]", modValue, 0, slideMax)
 						if changed then
 							if value <= 0 then value = 0.000001 end
 							AbilitiesParamMod[tostring(i)]["Value"] = value
@@ -626,7 +626,7 @@ re.on_draw_ui(function()
 						if (tonumber(defaultValue) or 0) < 3 then slideMax = 10 end
 						if ui.small_button("T:2") then uiInputState[i][2] = not uiInputState[i][2] end
 						ui.same_line()
-						local changed, value = ui.slider_float(ModStrings["AugmentsOverhualMenu_Label_Stat"] .. " [2]", modValue2, 0, slideMax)
+						local changed, value = ui.slider_float(ModStrings["AugmentsOverhaulMenu_Label_Stat"] .. " [2]", modValue2, 0, slideMax)
 						if changed then
 							if value <= 0 then value = 0.000001 end
 							AbilitiesParamMod[tostring(i)]["Value2"] = value
@@ -657,16 +657,16 @@ end)
 
 -- re.on_frame(
 -- function()
-	-- if not initPlayerAbilityList then updateEquipedListPlayer() end
-	-- if not initPawnAbilityList then updateEquipedListPawn() end
+	-- if not initPlayerAbilityList then updateEquippedListPlayer() end
+	-- if not initPawnAbilityList then updateEquippedListPawn() end
 -- end)
 
 
 sdk.hook(sdk.find_type_definition("app.PlayerStatusCalculatorParameter"):get_method("getJobStatusParam"),
 function (args)
 	if not abilitiesParamInitialized then InitAbilitiesParam() end
-	updateEquipedListPlayer(true)
-	updateEquipedListPawn(true)
+	updateEquippedListPlayer(true)
+	updateEquippedListPawn(true)
 end, nil)
 
 
@@ -684,30 +684,30 @@ end, function (retval)
 	local playerHuman = GetPlayerHuman()
 	if playerHuman and getAddress(playerHuman:get_field("<JobContext>k__BackingField")) == targetAddress then
 		resetAbilityState(PlayerAbilityState)
-		updateEquipedListPlayer()
+		updateEquippedListPlayer()
 		return retval
 	end
 
 	local pawnHuman = GetHumanPawn()
 	if pawnHuman and getAddress(pawnHuman:get_field("<JobContext>k__BackingField")) == targetAddress then
 		resetAbilityState(PawnAbilityState)
-		updateEquipedListPawn()
+		updateEquippedListPawn()
 	end
 	return retval
 end)
 
 -- local isAugmented = false
 -- local currentAbilityID
--- local currentEquipedAbility
--- sdk.hook(sdk.find_type_definition("app.AbilityContext.EquipedAbility"):get_method("hasAbility(app.HumanAbilityID)"),
+-- local currentEquippedAbility
+-- sdk.hook(sdk.find_type_definition("app.AbilityContext.EquippedAbility"):get_method("hasAbility(app.HumanAbilityID)"),
 -- function (args)
-	-- currentEquipedAbility = sdk.to_managed_object(args[2])
+	-- currentEquippedAbility = sdk.to_managed_object(args[2])
 	-- currentAbilityID = tostring(sdk.to_int64(args[3]) & 0xFF)
-	-- if isPlayer(currentEquipedAbility) then
+	-- if isPlayer(currentEquippedAbility) then
 		-- isAugmented = dataAugmentsPlayerEnabled[currentAbilityID]
 		-- return sdk.PreHookResult.SKIP_ORIGINAL 
 	-- end
-	-- if isPawn(currentEquipedAbility) then
+	-- if isPawn(currentEquippedAbility) then
 		-- isAugmented = dataAugmentsPawnEnabled[currentAbilityID]
 		-- return sdk.PreHookResult.SKIP_ORIGINAL 
 	-- end
@@ -723,18 +723,18 @@ end)
 function App.Init()
 	local data = {}
 	local config = {}
-	Log("Augments Unleashed Initilization!")
+	Log("Augments Unleashed Initialization!")
 	-- Loading Data
 	data = json.load_file(dataPath) or {}
 	for key, value in pairs(data) do
 		if key == "Augments" then
 			dataAugments = data["Augments"]
 		end
-		if key == "AugmentDescribtions" then
-			dataAugmentsDescribtion = data["AugmentDescribtions"]
+		if key == "AugmentDescriptions" then
+			dataAugmentsDescription = data["AugmentDescriptions"]
 		end
 		if key == "AugmentModDescriptions" then
-			dataAugmentsModDescribtion = data["AugmentModDescriptions"]
+			dataAugmentsModDescription = data["AugmentModDescriptions"]
 		end
 		if key == "ModStrings" then
 			for key, value in pairs(data["ModStrings"]) do
@@ -743,8 +743,8 @@ function App.Init()
 						ModStrings["ModName"] = ModStrings["ModName"] .. "[" .. value .. "]"
 					end
 				end
-				if key == "DiscriptiveMode" then
-					ModStrings["DiscriptiveMode"] = value
+				if key == "DescriptiveMode" then
+					ModStrings["DescriptiveMode"] = value
 				end
 				if key == "PlayerToggle" then
 					ModStrings["PlayerToggle"] = value
@@ -768,11 +768,11 @@ function App.Init()
 			if key == "DescriptiveMode" then
 				dataDescriptiveMode = config["DescriptiveMode"]
 			end
-			if key == "AugmentsOverhualSettings" then
-				AbilitiesParamMod = config["AugmentsOverhualSettings"]
+			if key == "AugmentsOverhaulSettings" then
+				AbilitiesParamMod = config["AugmentsOverhaulSettings"]
 			end
-			if key == "AugmentsOverhualEnabled" then
-				AugmentsOverhualEnabled = config["AugmentsOverhualEnabled"]
+			if key == "AugmentsOverhaulEnabled" then
+				AugmentsOverhaulEnabled = config["AugmentsOverhaulEnabled"]
 			end
 		end
 	end
