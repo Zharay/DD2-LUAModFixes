@@ -119,6 +119,21 @@ local function safe(f, ...)
     return nil
 end
 
+local function managed_elements(arr)
+    if not arr then return {} end
+    local elements = safe(function() return arr:get_elements() end)
+    local count = elements and safe(function() return #elements end)
+    if type(count) ~= "number" then return {} end
+    local out = {}
+    for i = 1, count do
+        local element = safe(function() return elements[i] end)
+        if element and safe(sdk.is_managed_object, element) == true then
+            out[#out + 1] = element
+        end
+    end
+    return out
+end
+
 -- Optional language pack: reframework/data/TrueHardMode_lang.json = { font = "file in reframework/fonts", strings = { English = translation } }.
 -- Without that file everything stays English and no extra font is loaded.
 local lang = safe(json.load_file, "TrueHardMode_lang.json")
@@ -280,6 +295,7 @@ if cfg.cfg_version ~= VERSION then
     save_cfg()
 end
 
+local framework_log = log
 local log_lines = {}
 local function log(s)
     log_lines[#log_lines + 1] = s
@@ -342,6 +358,69 @@ local function comp(obj, tname)
     return safe(function() return go:call("getComponent(System.Type)", t) end)
 end
 
+local health_notices = {}
+local function health_unavailable(reason)
+    if not health_notices[reason] then
+        health_notices[reason] = true
+        framework_log.info("[TrueHardMode] HP access skipped: " .. reason)
+    end
+    return nil, reason
+end
+
+local function health_state(hit, expected_character)
+    if not hit or safe(sdk.is_managed_object, hit) ~= true
+        or safe(function() return hit:call("get_Valid") end) ~= true then
+        return health_unavailable("invalid HitController")
+    end
+    local ch = safe(function() return hit:get_field("<CachedCharacter>k__BackingField") end)
+    if not ch or safe(sdk.is_managed_object, ch) ~= true
+        or safe(function() return ch:call("get_Valid") end) ~= true then
+        return health_unavailable("HitController character unavailable")
+    end
+    if expected_character then
+        local expected_addr = safe(function() return expected_character:get_address() end)
+        if not expected_addr or safe(function() return ch:get_address() end) ~= expected_addr then
+            return health_unavailable("HitController character mismatch")
+        end
+    end
+    -- get_Valid and CachedCharacter can survive teardown. Native HP getters dereference
+    -- RegionData without a null check; pcall cannot prevent REFramework's native exception log.
+    local regions = safe(function() return hit:get_field("RegionData") end)
+    if not regions or safe(sdk.is_managed_object, regions) ~= true then
+        return health_unavailable("RegionData unavailable")
+    end
+    local count = safe(function() return regions:get_field("_size") end)
+    local items = safe(function() return regions:get_field("_items") end)
+    local capacity = items and safe(function() return items:get_size() end)
+    if type(count) ~= "number" or count < 1 or type(capacity) ~= "number" or count > capacity then
+        return health_unavailable("RegionData not initialized")
+    end
+    for i = 0, count - 1 do
+        local region = safe(function() return items:get_element(i) end)
+        if not region or safe(sdk.is_managed_object, region) ~= true then
+            return health_unavailable("RegionData contains an unavailable region")
+        end
+    end
+    local context = safe(function() return hit:get_field("<HitContext>k__BackingField") end)
+    if not context or safe(sdk.is_managed_object, context) ~= true then
+        return health_unavailable("HitContext unavailable")
+    end
+    local ok, hp, maximum, reduced = pcall(function()
+        return hit:call("get_Hp"), hit:call("get_OriginalMaxHp"), hit:call("get_ReducedMaxHp")
+    end)
+    if not ok then return health_unavailable("health read failed: " .. tostring(hp)) end
+    for i = 1, 3 do
+        local value = select(i, hp, maximum, reduced)
+        if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then
+            return health_unavailable("invalid health values")
+        end
+    end
+    if maximum <= 0 then
+        return health_unavailable("health not initialized")
+    end
+    return { hp = hp, max = maximum, reduced = reduced, regions = count }
+end
+
 local stag_base = {}   -- address -> { base = reaction rate before the HP-dependent multiplier, last = value we wrote, seen = time }
 local orig_hp = {}   -- address -> original max HP, remembered so the target is always absolute
 local pre_existing = {}   -- enemies that were already there when the script started (their scaling state is unknown)
@@ -402,10 +481,10 @@ local function scale_enemy(en, force)
         return id .. ": skipped (Norgan enemy)"
     end
     local hit = comp(en, "app.HitController") or safe(function() return en:call("get_Hit") end)
-    if not hit then return id .. ": no HitController" end
-    local base = safe(function() return hit:call("get_OriginalMaxHp") end)
-    local hp = safe(function() return hit:call("get_Hp") end)
-    if not base or base <= 0 or not hp or hp <= 0 then return id .. ": skipped (no HP / dead)" end
+    local health, reason = health_state(hit, ch)
+    if not health then return id .. ": skipped (" .. reason .. ")", true end
+    local base, hp = health.max, health.hp
+    if hp <= 0 then return id .. ": skipped (dead)" end
     -- Stateless and absolute: the original max HP is learned per character id (lowest value ever seen),
     -- the target is always original x factor, so scaling the same enemy twice changes nothing.
     local repaired = false
@@ -484,7 +563,7 @@ local function scale_enemy(en, force)
     end
     if math.abs(cur_base - target) < 1 then return id .. ": already at target " .. string.format("%.0f", target) end
     local k = target / cur_base      -- factor relative to what the enemy has right now
-    local n = safe(function() return hit:call("get_RegionNum") end) or 1
+    local n = health.regions
     local ratio = hp / cur_base
     local wrote = 0
     for i = 0, n - 1 do
@@ -493,22 +572,30 @@ local function scale_enemy(en, force)
             if pcall(function() hit:call("setRegionOriginalMaxHp", rmax * k, i, false) end) then wrote = wrote + 1 end
         end
     end
-    local nmax = safe(function() return hit:call("get_OriginalMaxHp") end) or 0
-    recheck[#recheck + 1] = { hit = hit, t = os.clock(), id = id }
+    health, reason = health_state(hit, ch)
+    if not health then return id .. ": scaling interrupted (" .. reason .. ")", true end
+    local nmax = health.max
+    if DEBUG then
+        recheck[#recheck + 1] = { ch = ch, hit_addr = hit:get_address(), t = os.clock(), id = id }
+    end
     -- the reduced max HP caps the current HP, so it has to be raised too
-    local red = safe(function() return hit:call("get_ReducedMaxHp") end)
+    local red = health.reduced
     if red and red > 0 then
         local newred = red * k
         if not pcall(function() hit:call("setReducedMaxHpValue", newred) end) then
             pcall(function() hit:call("set_ReducedMaxHp", newred) end)
         end
-        if (safe(function() return hit:call("get_ReducedMaxHp") end) or 0) < newred * 0.99 then
+        health, reason = health_state(hit, ch)
+        if not health then return id .. ": scaling interrupted (" .. reason .. ")", true end
+        if health.reduced < newred * 0.99 then
             pcall(function() hit:call("set_ReducedMaxHp", newred) end)
         end
     end
     -- keep the current HP ratio (enemy starts full, so this is a full health bar)
     pcall(function() hit:call("setHpValue", nmax * ratio, false) end)
-    local nhp = safe(function() return hit:call("get_Hp") end) or 0
+    health, reason = health_state(hit, ch)
+    if not health then return id .. ": scaling interrupted (" .. reason .. ")", true end
+    local nhp = health.hp
     return string.format("%s [%s x%.1f]: max %.0f -> %.0f, hp %.0f -> %.0f (regions %d/%d)",
         id .. (repaired and " (REPAIRED)" or ""), tier, f, base, nmax, hp, nhp, wrote, n) .. stag
 end
@@ -588,9 +675,16 @@ local function apply_damage_mult(di)
     local newdmg = dmg * cfg.attack_mult * roll_mult
     -- bonus damage: random percent of the target's max HP, depending on the size of the attacker
     local rh = char_of(rcv_go, "app.HitController")
-    local maxhp = rh and safe(function() return rh:call("get_OriginalMaxHp") end)
-    local ah = char_of(atk_go, "app.HitController")
-    local abase = cfg.learned[aid] or (ah and safe(function() return ah:call("get_OriginalMaxHp") end)) or 0
+    local receiver_health, reason = health_state(rh, rcv)
+    if not receiver_health then dbg.reason = "receiver health unavailable: " .. reason; return end
+    local maxhp = receiver_health.max
+    local abase = cfg.learned[aid]
+    if not abase then
+        local attacker_health
+        attacker_health, reason = health_state(char_of(atk_go, "app.HitController"), atk)
+        if not attacker_health then dbg.reason = "attacker health unavailable: " .. reason; return end
+        abase = attacker_health.max
+    end
     local lo, hi, min_dmg
     local is_large = abase >= cfg.large_above
     if abase < cfg.small_below then lo, hi, min_dmg = cfg.dmg_small_min, cfg.dmg_small_max, cfg.small_bonus_min_dmg
@@ -687,41 +781,42 @@ end
 -- Our enemies hit much harder, so the loss is scaled down: after the game has applied a hit (updateDamage) the
 -- loss of that hit is multiplied by loss_mult (1 = base game).
 local loss_dbg = { calls = 0, changed = 0, events = {}, last = "-" }
-local player_hc, player_addr, player_t = nil, nil, -10
-local function refresh_player_hc()
-    local now = os.clock()
-    if now - player_t < 2.0 then return end
-    player_t = now
-    local p = get_player()
-    player_hc = p and char_of(safe(function() return p:call("get_GameObject") end), "app.HitController") or nil
-    player_addr = player_hc and safe(function() return player_hc:get_address() end) or nil
-end
 local loss_m = hc_td and hc_td:get_method("updateDamage(app.HitController.DamageInfo, System.UInt32, System.Single, System.Boolean)")
 if loss_m then
     sdk.hook(loss_m, function(args)
         local st = thread.get_hook_storage()
         st.before = nil
+        st.loss_hit, st.loss_character = nil, nil
         if not cfg.enabled or not cfg.norgan_visited or cfg.loss_mult >= 0.999 then return end
-        refresh_player_hc()
-        if not player_addr then return end
+        local player = get_player()
+        if not player then return end
         local this = safe(sdk.to_managed_object, args[2])
-        if not this or safe(function() return this:get_address() end) ~= player_addr then return end
+        local character = this and safe(function() return this:get_field("<CachedCharacter>k__BackingField") end)
+        if not character or safe(function() return character:get_address() end) ~= safe(function() return player:get_address() end) then return end
         local di = safe(sdk.to_managed_object, args[3])
         local atk_go = di and safe(function() return di:get_field("<AttackOwnerObject>k__BackingField") end)
         if left_alone(char_of(atk_go, "app.Character")) then return end   -- rift: base game loss
-        st.before = safe(function() return player_hc:call("get_ReducedMaxHp") end)
+        local health = health_state(this, player)
+        if not health then return end
+        st.before, st.loss_hit, st.loss_character = health.reduced, this, player
     end, function(rv)
         local st = thread.get_hook_storage()
         local before = st.before
-        if not before or not player_hc then return rv end
+        local hit, character = st.loss_hit, st.loss_character
+        st.before, st.loss_hit, st.loss_character = nil, nil, nil
+        if not before or not hit then return rv end
+        local health, reason = health_state(hit, character)
+        if not health then loss_dbg.last = "skipped: " .. reason; return rv end
         loss_dbg.calls = loss_dbg.calls + 1
-        local after = safe(function() return player_hc:call("get_ReducedMaxHp") end)
-        if not after or after >= before - 0.001 then return rv end        -- no loss from this hit
+        local after = health.reduced
+        if after >= before - 0.001 then return rv end        -- no loss from this hit
         local newv = before - (before - after) * cfg.loss_mult
-        if not pcall(function() player_hc:call("setReducedMaxHp", newv) end) then
-            pcall(function() player_hc:call("setReducedMaxHpValue", newv) end)
+        if not pcall(function() hit:call("setReducedMaxHp", newv) end) then
+            pcall(function() hit:call("setReducedMaxHpValue", newv) end)
         end
-        local chk = safe(function() return player_hc:call("get_ReducedMaxHp") end)
+        health, reason = health_state(hit, character)
+        if not health then loss_dbg.last = "verification unavailable: " .. reason; return rv end
+        local chk = health.reduced
         loss_dbg.changed = loss_dbg.changed + 1
         loss_dbg.last = string.format("lost %.1f -> %.1f (now %s)", before - after, before - newv, tostring(chk))
         return rv
@@ -741,16 +836,10 @@ local function scene_enemies_of(tname)
     local t = safe(sdk.typeof, tname)
     if not (scene and t) then return {} end
     local arr = safe(function() return scene:call("findComponents(System.Type)", t) end)
-    return arr and (safe(function() return arr:get_elements() end) or {}) or {}
+    return managed_elements(arr)
 end
-local enemies_cache, enemies_t = {}, -10   -- the scene search is expensive: everybody shares one result for half a second
 local function scene_enemies()
-    local now = os.clock()
-    if now - enemies_t >= 0.5 then
-        enemies_t = now
-        enemies_cache = scene_enemies_of("app.Ch200000")
-    end
-    return enemies_cache
+    return scene_enemies_of("app.Ch200000")
 end
 
 local last_seen = {}
@@ -777,12 +866,13 @@ if exp_m then
             local t = safe(sdk.typeof, "app.HitController")
             hit = t and safe(function() return go:call("getComponent(System.Type)", t) end)
         end
-        local maxhp = hit and safe(function() return hit:call("get_OriginalMaxHp") end)
+        local health = health_state(hit, ch)
+        local maxhp = health and health.max
         local entry = { id = id, norgan_enemy = nrd, exp_original = exp, max_hp_now = maxhp, time = os.date("%H:%M:%S") }
         local lo = cfg.learned[id]
         local hpf = (maxhp and lo and lo > 0) and (maxhp / lo) or 1.0
         entry.hp_factor = hpf
-        if is_active() and nrd ~= true and not left_alone(ch) and string.find(id, "^ch2") and (cfg.exp_follow > 0 or cfg.exp_mult ~= 1.0 or cfg.exp_per_hp > 0) then
+        if maxhp and is_active() and nrd ~= true and not left_alone(ch) and string.find(id, "^ch2") and (cfg.exp_follow > 0 or cfg.exp_mult ~= 1.0 or cfg.exp_per_hp > 0) then
             local newexp
             if cfg.exp_per_hp > 0 and maxhp and hpf > 1.0 then
                 local ref = math.max(cfg.exp_ref_hp, 1.0)
@@ -824,8 +914,9 @@ local function scan(now)
                 if not t0 then
                     first_seen[a] = now
                 elseif now - t0 >= 0.7 then
-                    done[a] = true
-                    log(scale_enemy(e, false))
+                    local result, retry = scale_enemy(e, false)
+                    if not retry then done[a] = true end
+                    log(result)
                 end
             end
         end
@@ -848,10 +939,10 @@ local function dyn_stagger(now)
         local id = ch and safe(function() return ch:call("get_CharaIDString") end)
         if type(id) == "string" and string.find(id, "^ch2") and not left_alone(ch) and not (cfg.skip_animals and string.find(id, "^ch299")) then
             local hit = comp(e, "app.HitController")
-            local hp = hit and safe(function() return hit:call("get_Hp") end)
-            local mx = hit and safe(function() return hit:call("get_OriginalMaxHp") end)
-            local rr = hit and safe(function() return hit:call("get_BaseReactionDamageRate") end)
-            if hp and mx and rr and hp > 0 and mx > 0 then
+            local health = health_state(hit, ch)
+            local rr = health and safe(function() return hit:call("get_BaseReactionDamageRate") end)
+            if health and rr and health.hp > 0 then
+                local hp, mx = health.hp, health.max
                 local st = stag_base[a]
                 if not st or math.abs(rr - st.last) > 0.002 then
                     st = { base = rr, last = rr }          -- new enemy, or the rate was set by someone else: start from there
@@ -874,10 +965,11 @@ end
 -- Camp meal: restores the lost max HP (loss gauge) of the player and the pawns, like a night's rest.
 local meal_reset_at = nil
 local meal_last = "-"
-local function restore_loss_gauge(hc)
-    local orig = safe(function() return hc:call("get_OriginalMaxHp") end)
-    local red = safe(function() return hc:call("get_ReducedMaxHp") end)
-    if not orig or not red or red >= orig - 0.001 then return false end
+local function restore_loss_gauge(hc, ch)
+    local health = health_state(hc, ch)
+    if not health then return false end
+    local orig, red = health.max, health.reduced
+    if red >= orig - 0.001 then return false end
     if not pcall(function() hc:call("setReducedMaxHp", orig) end) then
         if not pcall(function() hc:call("setReducedMaxHpValue", orig) end) then return false end
     end
@@ -899,7 +991,7 @@ local function do_meal_reset()
             local hit = comp(ch, "app.HitController")
             if hit then
                 total = total + 1
-                if restore_loss_gauge(hit) then n = n + 1 end
+                if restore_loss_gauge(hit, ch) then n = n + 1 end
             end
         end
     end
@@ -952,12 +1044,20 @@ re.on_frame(function()
         local r = recheck[k]
         if now - r.t >= 1.5 then
             table.remove(recheck, k)
-            local m = safe(function() return r.hit:call("get_OriginalMaxHp") end)
-            local h = safe(function() return r.hit:call("get_Hp") end)
-            local rm = safe(function() return r.hit:call("get_ReducedMaxHp") end)
-            local br = safe(function() return r.hit:call("get_BaseReactionDamageRate") end)
-            local rc = safe(function() return r.hit:call("get_ReactionDamageRateCalc") end)
-            log(string.format("RECHECK %s after 1.5s: max %s, reducedMax %s, hp %s, reactionBase %s, reactionCalc %s", r.id, tostring(m), tostring(rm), tostring(h), tostring(br), tostring(rc)))
+            local valid = safe(function() return r.ch:call("get_Valid") end) == true
+            local hit = valid and comp(r.ch, "app.HitController")
+            if hit and safe(function() return hit:get_address() end) == r.hit_addr then
+                local health, reason = health_state(hit, r.ch)
+                if health then
+                    local br = safe(function() return hit:call("get_BaseReactionDamageRate") end)
+                    local rc = safe(function() return hit:call("get_ReactionDamageRateCalc") end)
+                    log(string.format("RECHECK %s after 1.5s: max %s, reducedMax %s, hp %s, reactionBase %s, reactionCalc %s", r.id, tostring(health.max), tostring(health.reduced), tostring(health.hp), tostring(br), tostring(rc)))
+                else
+                    log("RECHECK " .. r.id .. " skipped: " .. reason)
+                end
+            else
+                log("RECHECK " .. r.id .. " skipped: character unloaded or controller replaced")
+            end
         end
     end
 
@@ -996,9 +1096,9 @@ local function refresh_hp_rows(now)
             local d = epos and math.sqrt((epos.x - ppos.x) ^ 2 + (epos.y - ppos.y) ^ 2 + (epos.z - ppos.z) ^ 2)
             if d and d <= cfg.hp_window_radius then      -- far enemies may not be fully loaded
                 local hit = comp(e, "app.HitController")
-                local hp = hit and safe(function() return hit:call("get_Hp") end)
-                local mx = hit and safe(function() return hit:call("get_ReducedMaxHp") end)
-                if hp and mx and hp > 0 and mx > 0 then
+                local health = health_state(hit, ch)
+                if health and health.hp > 0 and health.reduced > 0 then
+                    local hp, mx = health.hp, health.reduced
                     local name = safe(function() return ch:call("get_CharaName") end)
                     local a = safe(function() return e:get_address() end)
                     local tier = "boss"
