@@ -149,8 +149,24 @@ jobs:
             fi
             git log --reverse --format='### %h%n%n%B' "$COMMIT_RANGE" --
           } > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$TAG" dist/*.zip \
-            --target "${{ github.sha }}" \
-            --title "Build ${{ github.run_number }}" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" \
-            --latest
+          for attempt in 1 2 3; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              if gh release upload "$TAG" dist/*.zip --clobber; then
+                exit 0
+              fi
+            elif gh release create "$TAG" dist/*.zip \
+              --target "${{ github.sha }}" \
+              --title "Build ${{ github.run_number }}" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --latest; then
+              exit 0
+            fi
+
+            if [[ "$attempt" -lt 3 ]]; then
+              echo "::warning::Release publication attempt $attempt failed; retrying."
+              sleep "$((attempt * 5))"
+            fi
+          done
+
+          echo "::error::Failed to publish release $TAG after 3 attempts."
+          exit 1
