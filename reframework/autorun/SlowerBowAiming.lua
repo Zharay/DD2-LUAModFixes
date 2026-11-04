@@ -55,6 +55,7 @@ local default_config = {
     ["skillTimerTargetColor"] = 0xBBFFFFFF,
     ["skillTimerCursorColor"] = 0xCC000000,
     ["oneSecSkillCharge"] = false,
+    ["oneSecSkillChargeSlowAim"] = false,
     ["useHotkey"] = false,
     ["hotkeyActivationMode"] = "Tap",
     ["hotkeyActivationDelay"] = 0.25
@@ -856,8 +857,13 @@ re.on_draw_ui(function()
             _changed, config.skillTimerCursorColor = imgui.color_edit("Cursor", dst.Cursor.color, 32)
             if _changed then saveConfig() dst.Cursor.color = config.skillTimerCursorColor end
         end
-        _changed, config.oneSecSkillCharge = imgui.checkbox("Fast Skill Charge Time", config.oneSecSkillCharge)
+        local fastChargeTooltip = "Archer/Magick Archer: Caps charge time to 1 second."
+        _changed, config.oneSecSkillCharge = imgui.checkbox("Fast Skill Charge (Universal)", config.oneSecSkillCharge)
+        if imgui.is_item_hovered() then imgui.set_tooltip(fastChargeTooltip) end
         if _changed then saveConfig() end
+        --_changed, config.oneSecSkillChargeSlowAim = imgui.checkbox("Fast Skill Charge (Slow-aim)", config.oneSecSkillChargeSlowAim)
+        --if imgui.is_item_hovered() then imgui.set_tooltip(fastChargeTooltip) end
+        --if _changed then saveConfig() end
         
         if enableDebug then 
             imgui.text("Character")
@@ -879,36 +885,30 @@ end
 
 local tempVal = sdk.create_single(10.000)
 local appSkillReturn = nil
+local function shouldUseFastSkillCharge()
+    return config.oneSecSkillCharge or (config.oneSecSkillChargeSlowAim and slowAimOn)
+end
+
+local function capSkillCharge(retval)
+    if not shouldUseFastSkillCharge() then return retval end
+
+    local chargeCap = 1.00
+    if slowAimOn and not config.ignorePlayer then
+        chargeCap = _speed[config.speed]
+    end
+    local originalCharge = sdk.to_float(retval)
+    if originalCharge > chargeCap then
+        return sdk.float_to_ptr(chargeCap)
+    end
+    return retval
+end
+
 if _experimental then 
     -- app.Job02PrepareSkill.getPrepareSec()
-    sdk.hook(sdk.find_type_definition("app.Job02PrepareSkill"):get_method("getPrepareSec()"),nil,
-    function(retval)
-        if config.oneSecSkillCharge then 
-            local spdAdjustedSingleSecond = 1.00
-            if not config.ignorePlayer then 
-               spdAdjustedSingleSecond = _speed[config.speed]
-            end
-            return(sdk.float_to_ptr(spdAdjustedSingleSecond)) 
-        else 
-            return retval
-        end
-    end
-    )
+    sdk.hook(sdk.find_type_definition("app.Job02PrepareSkill"):get_method("getPrepareSec()"), nil, capSkillCharge)
 
-     -- app.Job08PrepareSkill.getPrepareSec()
-     sdk.hook(sdk.find_type_definition("app.Job08PrepareSkill"):get_method("getPrepareSec()"),nil,
-     function(retval)
-         if config.oneSecSkillCharge then 
-             local spdAdjustedSingleSecond = 1.00
-             if not config.ignorePlayer then 
-                spdAdjustedSingleSecond = _speed[config.speed]
-             end
-             return(sdk.float_to_ptr(spdAdjustedSingleSecond)) 
-         else 
-             return retval
-         end
-     end
-     )
+    -- app.Job08PrepareSkill.getPrepareSec()
+    sdk.hook(sdk.find_type_definition("app.Job08PrepareSkill"):get_method("getPrepareSec()"), nil, capSkillCharge)
 end
 
 re.on_frame(function() 
