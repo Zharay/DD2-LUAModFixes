@@ -448,18 +448,22 @@ local LADDER = {10000, 50000, 150000, 500000}
 local SETTINGS_FILE = 'spoils_engraving_settings.json'
 local FEE_MAX = 999999999
 local function fee_ok(v) return math.type(v) == 'integer' and v >= 1 and v <= FEE_MAX end
+local fp_ok, saved_fp = pcall(json.load_file, FP_FILE)
+local ALLOW_VERSION = fp_ok and type(saved_fp) == 'table' and saved_fp.schema == 'relic-write-fingerprint-1'
 do
     local ok, v = pcall(json.load_file, SETTINGS_FILE)
     if ok and type(v) == 'table' and v.schema == 'relic-settings-1' then
         if fee_ok(math.tointeger(v.extraction)) then FEES.extraction = math.tointeger(v.extraction) end
         if type(v.keep_gear) == 'boolean' then FEES.keep_gear = v.keep_gear end
+        if type(v.allow_version) == 'boolean' then ALLOW_VERSION = v.allow_version end
         if type(v.ladder) == 'table' then
             for i = 1, #LADDER do local n = math.tointeger(v.ladder[i]) if fee_ok(n) then LADDER[i] = n end end
         end
     end
 end
 local function save_settings()
-    return json.dump_file(SETTINGS_FILE, {schema = 'relic-settings-1', extraction = FEES.extraction, ladder = LADDER, keep_gear = FEES.keep_gear}) ~= false
+    return json.dump_file(SETTINGS_FILE, {schema = 'relic-settings-1', extraction = FEES.extraction, ladder = LADDER,
+        keep_gear = FEES.keep_gear, allow_version = ALLOW_VERSION}) ~= false
 end
 local WORK_SHIFT, WORK_MASK = 23, 0x7F
 local function ext_count(ext) return ((math.tointeger(ext or 0) or 0) & 0xffffffff) >> WORK_SHIFT & WORK_MASK end
@@ -534,7 +538,7 @@ local function compose()
     local profile = require('spoils_engraving/profile')
     local cfg = {}
     for k, v in pairs(profile) do cfg[k] = v end
-    local fp = json.load_file(FP_FILE)
+    local fp = ALLOW_VERSION and json.load_file(FP_FILE) or nil
     cfg.write_fingerprint = type(fp) == 'table' and fp.schema == 'relic-write-fingerprint-1' and fp or KNOWN_FP
     local reader = require('spoils_engraving/inventory_reader').new(sdk, require('spoils_engraving/inventory_profile'))
     local actor = require('spoils_engraving/actor').new(sdk, cfg)
@@ -947,14 +951,20 @@ end
 -- Records the observed fingerprint, so this game version is accepted until the write methods change.
 local function allow_real()
     local b = CORE.native.build
-    if b.code ~= 'matched' then
-        if type(b.observed) ~= 'table' then error(b.reason or 'The game version could not be checked.', 0) end
-        if json.dump_file(FP_FILE, b.observed) == false then error('The fingerprint file was not written.', 0) end
-        CORE.native.build = require('spoils_engraving/build_check').verify(sdk, json.load_file(FP_FILE))
-    end
+    if type(b.observed) ~= 'table' then error(b.reason or 'The game version could not be checked.', 0) end
+    if json.dump_file(FP_FILE, b.observed) == false then error('The fingerprint file was not written.', 0) end
+    CORE.native.build = require('spoils_engraving/build_check').verify(sdk, json.load_file(FP_FILE))
+    if not CORE.native.build.ok then error(CORE.native.build.reason or 'The game version could not be verified.', 0) end
     CORE.real = CORE.native.build.ok == true
     R.core.build, R.core.real_allowed = build_info(), CORE.real or R.core.real_allowed
     R.core.events[#R.core.events + 1] = {kind = 'allow_real', code = b.code, ok = CORE.real, frame = S.frame}
+    S.dirty = true
+end
+local function disallow_real()
+    CORE.native.build = require('spoils_engraving/build_check').verify(sdk, KNOWN_FP)
+    CORE.real = CORE.native.build.ok == true
+    R.core.build, R.core.real_allowed = build_info(), CORE.real
+    R.core.events[#R.core.events + 1] = {kind = 'disallow_real', ok = CORE.real, frame = S.frame}
     S.dirty = true
 end
 local function plain(e)
@@ -2632,13 +2642,22 @@ re.on_draw_ui(function()
                 R.core.events[#R.core.events + 1] = {kind = 'acknowledge', ok = ok, error = not ok and tostring(e) or nil}
                 S.dirty = true
             end
-        elseif not CORE.real then
-            imgui.text('Test runs only: confirms change nothing. ' .. (b.ok and '' or tostring(b.reason)))
-            if imgui.button('Allow crafting on this game version (at your own risk)') then
-                local ok, e = pcall(allow_real)
-                if not ok then S.real_msg = tostring(e) end
+        elseif not CORE.real or ALLOW_VERSION then
+            imgui.text_colored('TEST RUN ONLY: Version mismatch. Confirmations make no changes.', 0xFF00FFFF)
+            local changed, value = imgui.checkbox('Allow crafting on this game version', ALLOW_VERSION)
+            if changed and type(value) == 'boolean' then
+                S.real_msg = false
+                ALLOW_VERSION = value
+                local ok, e = pcall(value and allow_real or disallow_real)
+                if not ok then
+                    ALLOW_VERSION = not value
+                    S.real_msg = tostring(e)
+                else
+                    S.settings_saved = save_settings()
+                end
             end
             if S.real_msg then imgui.text(S.real_msg) end
+            if S.settings_saved == false then imgui.text('The version setting could not be saved.') end
         end
     elseif CORE.error then
         imgui.text('Crafting failed to load: ' .. CORE.error)
