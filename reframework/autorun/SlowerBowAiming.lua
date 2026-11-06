@@ -3,6 +3,14 @@
 -- globals
 local modName = "SlowerBowAiming"
 local hotkeys = require("Hotkeys/Hotkeys")
+
+local re = re
+local log = log
+local json = json
+local sdk = sdk
+local imgui = imgui
+local draw = draw
+
 local aimHotkey = modName .. " Toggle Slow Aim"
 local defaultHotkeys = {[aimHotkey] = "L3"}
 local activationModes = {"Tap", "Hold"}
@@ -16,6 +24,7 @@ local _ApplicationType = sdk.find_type_definition("via.Application")
 local _CameraManager = sdk.get_managed_singleton("app.CameraManager")
 local _GuiManager = nil
 
+
 local _CharacterManager = nil
 local _Character = nil
 local _Player = nil
@@ -25,6 +34,7 @@ local _CommonActionController = nil
 local MOInitialized = false
 local slowAimOn = false
 local isAiming = false
+local isPentadAiming = false
 local isPaused = false
 local lastAimingVal = false
 local _speed = {
@@ -99,7 +109,10 @@ end
 -- logging turned off when enableLog = false
 local function _log(_cat,msg)
     if enableLog then 
+        local previousLevel = log.get_level and log.get_level() or "error"
+        log.set_level("debug")
         log.debug("[" .. tostring(modName) .. "][" .. tostring(_cat) .. "] " .. tostring(msg))
+        log.set_level(previousLevel)
     end
 end
 
@@ -165,6 +178,7 @@ local function initManagedObjects()
         _Character, _Player, _Human = nil, nil, nil
         _CommonActionController, _InputProcessor = nil, nil
         isAiming = false
+        isPentadAiming = false
     end
     if not MOInitialized then
         _log("initManagedObjects", "start")
@@ -544,10 +558,37 @@ local function compensateGamePadAimSpeed(_activate, _step, _base)
 end
 
 local postLooseLock = false
+local function getCurrentActionNames()
+    local actionManager = _Character and _Character:get_ActionManager()
+    local actions = actionManager and actionManager:get_field("CurrentActionList")
+    if not actions then return nil, nil end
+
+    local count = actions:call("get_Count()")
+    local function getName(index)
+        if index >= count then return nil end
+        local action = actions:call("get_Item(System.Int32)", index)
+        local name = action and action:get_field("Name")
+        return name and tostring(name) or nil
+    end
+    return getName(0), getName(1)
+end
+
+-- Note: Harmonic Pentad and Rhapsodic Rain (unused Magick Archer skill) share Job08_DivineArrow.
+local divineArrowSkillId = 117
 local function aimLogicPre()
+    isPentadAiming = false
     if _InputProcessor then
-        if (not isBowLoosed() or isCarryObject()) and _InputProcessor:get_field("TimerAimHoldKeep") < 1.000 then
-            isAiming = _InputProcessor:get_field("IsAimHoldOn")
+        local aimHold = _InputProcessor:get_field("IsAimHoldOn")
+        if aimHold and _Human and isMagicBowActive() and not isCarryObject()
+            and _Human:get_field("<CustomSkillState>k__BackingField") == divineArrowSkillId then
+            local fullAction, upperAction = getCurrentActionNames()
+            isPentadAiming = fullAction == "Job08_ReadyDivineArrowBody"
+                and (upperAction == "Job08_PrepareDivineArrow" or upperAction == "Job08_ReadyDivineArrow")
+        end
+        if isPentadAiming then
+            isAiming = true
+        elseif (not isBowLoosed() or isCarryObject()) and _InputProcessor:get_field("TimerAimHoldKeep") < 1.000 then
+            isAiming = aimHold
             if lastAimingVal ~= isAiming then 
                 _logV("isAiming", tostring(isAiming))
                 lastAimingVal = isAiming
@@ -719,7 +760,7 @@ local function aimLogicPost()
                         easeSteps = 25
                     end
                 end
-            elseif (not isAiming or (isBowLoosed() and not isCarryObject())) and slowAimOn then 
+            elseif (not isAiming or (isBowLoosed() and not isCarryObject() and not isPentadAiming)) and slowAimOn then
                 _log("Damping", dampingFrames)
                 if isDamping then 
                     if dampingFrames < 1 then 
@@ -858,7 +899,7 @@ re.on_draw_ui(function()
             if _changed then saveConfig() dst.Cursor.color = config.skillTimerCursorColor end
         end
         local fastChargeTooltip = "Archer/Magick Archer: Caps charge time to 1 second."
-        _changed, config.oneSecSkillCharge = imgui.checkbox("Fast Skill Charge (Universal)", config.oneSecSkillCharge)
+        _changed, config.oneSecSkillCharge = imgui.checkbox("Fast Skill Charge", config.oneSecSkillCharge)
         if imgui.is_item_hovered() then imgui.set_tooltip(fastChargeTooltip) end
         if _changed then saveConfig() end
         --_changed, config.oneSecSkillChargeSlowAim = imgui.checkbox("Fast Skill Charge (Slow-aim)", config.oneSecSkillChargeSlowAim)
