@@ -175,47 +175,38 @@ local function GetPawn(itemManager, extraWeight)
     -- party never has more than MaxPartyPawns pawns, so cap the scan regardless of what get_Count() reports
     local scanCount = math.min(len, MaxPartyPawns)
     local startIndex = NextPawnIndex % len
+    local fallbackPawn, fallbackIndex
     for offset = 0, scanCount - 1, 1 do
         local i = (startIndex + offset) % len
         -- isolate each pawn's evaluation so one bad/stale pawn can't abort the whole scan
-        local ok, result = pcall(function()
+        local ok, result, canCarry = pcall(function()
             local pawnChar = list:call("get_Item", i)
             if not pawnChar then
                 Log("GetPawn: pawn " .. tostring(i) .. " entry was nil")
                 return nil
             end
-            if Config.DistributionRules == DistributionRules[3] then
-                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
-                    .. " selected by Always Pawns")
-                return pawnChar
-            end
             local limit = itemManager:call("getWeightLimit(app.Character)", pawnChar)
             local weight = itemManager:call("getStorageWeight(app.Character)", pawnChar)
-            if Config.DistributionRules == DistributionRules[2] then
-                local currentRank = itemManager:call("getWeightRank(System.Single, System.Single)", weight, limit)
-                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
-                    .. " weight=" .. tostring(weight) .. ", limit=" .. tostring(limit)
-                    .. ", currentRank=" .. tostring(currentRank))
-                if currentRank <= 2 then
-                    return pawnChar
-                end
-            else
-                local resultingRank = itemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
-                Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
-                    .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
-                    .. ", limit=" .. tostring(limit) .. ", resultingRank=" .. tostring(resultingRank))
-                if resultingRank <= 2 then
-                    return pawnChar
-                end
-            end
-            return nil
+            local resultingRank = itemManager:call("getWeightRank(System.Single, System.Single)", weight + extraWeight, limit)
+            Log("GetPawn: pawn " .. tostring(i) .. " id=" .. tostring(pawnChar:get_CharaID())
+                .. " weight=" .. tostring(weight) .. ", extra=" .. tostring(extraWeight)
+                .. ", limit=" .. tostring(limit) .. ", resultingRank=" .. tostring(resultingRank))
+            return pawnChar, resultingRank <= 2
         end)
         if not ok then
             Log("GetPawn: pawn " .. tostring(i) .. " evaluation FAILED, skipping: " .. tostring(result))
-        elseif result then
+        elseif result and canCarry then
             NextPawnIndex = (i + 1) % len
             return result
+        elseif not fallbackPawn then
+            fallbackPawn, fallbackIndex = result, i
         end
+    end
+    if fallbackPawn and Config.DistributionRules ~= DistributionRules[1] then
+        Log("GetPawn: no pawn can carry the item within weight rank 2; falling back to pawn "
+            .. tostring(fallbackIndex) .. " in the current order")
+        NextPawnIndex = (fallbackIndex + 1) % len
+        return fallbackPawn
     end
     return nil
 end
