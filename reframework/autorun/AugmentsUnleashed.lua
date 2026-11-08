@@ -8,6 +8,16 @@ local ui = imgui
 local modName = "AugmentsUnleashed"
 local dataPath = "AugmentsUnleashed.json"
 local configPath = "AugmentsUnleashedConfig.json"
+-- Four named snapshots of both characters, including native equipped augments.
+-- Save/Load above the menu note selects a slot; saving then asks for its name.
+-- Loading replaces mod selections only, leaving the game's native slots untouched.
+local presetsPath = "AugmentsUnleashedPresets.json"
+local PRESET_COUNT = 4
+local presets = {}
+local presetMode, presetSlot
+local presetName = ""
+local presetError
+local presetsReadError
 -- 1 = Player, 2 = Pawn (index into the Augments Menu drop-list)
 local SelectedTarget = 1
 local AugmentsInfinityEnabled = false
@@ -87,7 +97,7 @@ local MainPawn
 local function GetMainPawn()
 	local pawnMgr = GetPawnManager()
 	if pawnMgr then
-		if MainPawn == nil then MainPawn = pawnMgr:call("get_MainPawn") end
+		MainPawn = pawnMgr:call("get_MainPawn")
 		return MainPawn
 	end
 	return nil
@@ -97,7 +107,7 @@ local HumanPawn
 local function GetHumanPawn()
 	local mainPawn = GetMainPawn()
 	if mainPawn then
-		if HumanPawn == nil then HumanPawn = mainPawn:call("get_CachedHuman") end
+		HumanPawn = mainPawn:call("get_CachedHuman")
 		return HumanPawn
 	end
 	return nil
@@ -107,7 +117,7 @@ local HumanPlayer
 local function GetPlayerHuman()
     local playerMgr = GetCharacterManager()
     if playerMgr then
-        if HumanPlayer == nil then HumanPlayer = playerMgr:call("get_ManualPlayerHuman()") end
+        HumanPlayer = playerMgr:call("get_ManualPlayerHuman()")
 	    return HumanPlayer
     end
     return nil
@@ -193,7 +203,7 @@ local JobManagerPawn
 local function GetPawnJob()
 	local pawnHuman = GetHumanPawn()
 	if pawnHuman then
-		if JobManagerPawn == nil then JobManagerPawn = pawnHuman:get_field("<JobContext>k__BackingField") end
+		JobManagerPawn = pawnHuman:get_field("<JobContext>k__BackingField")
 		if JobManagerPawn == nil then return nil end
 		return JobManagerPawn:get_field("CurrentJob")
 	end
@@ -204,7 +214,7 @@ local JobManagerPlayer
 local function GetPlayerJob()
 	local playerHuman = GetPlayerHuman()
 	if playerHuman then
-		if JobManagerPlayer == nil then JobManagerPlayer = playerHuman:get_field("<JobContext>k__BackingField") end
+		JobManagerPlayer = playerHuman:get_field("<JobContext>k__BackingField")
 		if JobManagerPlayer == nil then return nil end
 		return JobManagerPlayer:get_field("CurrentJob")
 	end
@@ -215,7 +225,7 @@ local PawnAbilityContext
 local function GetPawnAbilityContext()
     local pawnHuman = GetHumanPawn()
     if pawnHuman then
-        if PawnAbilityContext == nil then PawnAbilityContext = pawnHuman:call("get_AbilityContext()") end
+        PawnAbilityContext = pawnHuman:call("get_AbilityContext()")
 	    return PawnAbilityContext
     end
     return nil
@@ -225,7 +235,7 @@ local PlayerAbilityContext
 local function GetPlayerAbilityContext()
     local playerHuman = GetPlayerHuman()
     if playerHuman then
-        if PlayerAbilityContext == nil then PlayerAbilityContext = playerHuman:call("get_AbilityContext()") end
+        PlayerAbilityContext = playerHuman:call("get_AbilityContext()")
 	    return PlayerAbilityContext
     end
     return nil
@@ -306,19 +316,32 @@ local function applyAugments(abilityList, enabledAugments, isPawn)
 	end
 end
 
+local function augmentsMatch(abilityList, enabledAugments, isPawn)
+	if getArraySize(abilityList) ~= ABILITY_ARRAY_SIZE then return false end
+	for i = ABILITY_MIN, ABILITY_MAX do
+		local enabled = canUseAugment(i, isPawn) and enabledAugments[tostring(i)]
+		if getAbilityValue(abilityList, NATIVE_SLOT_COUNT + (i - ABILITY_MIN)) ~= (enabled and i or 0) then
+			return false
+		end
+	end
+	return true
+end
+
 -- Returns a set of augment IDs equipped through the game's own augment slots.
 local function getNativeEquipped(abilityContext, job, target)
 	local equipped = {}
-	if abilityContext == nil or job == nil then return equipped end
+	if abilityContext == nil or job == nil then return equipped, false end
 	local currentEquipped = abilityContext:call("getEquipAbilityList", job)
-	if currentEquipped == nil then return equipped end
+	if currentEquipped == nil then return equipped, false end
 	local currentList = currentEquipped:get_field("Abilities")
-	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
+	local size = getArraySize(currentList)
+	if size <= 0 then return equipped, false end
+	for i = 0, math.min(size, NATIVE_SLOT_COUNT) - 1 do
 		local id = getAbilityValue(currentList, i)
 		reportUnknownAugment(id, i, job, target)
 		if id ~= 0 then equipped[id] = true end
 	end
-	return equipped
+	return equipped, true
 end
 
 local PlayerAbilityState = { list = nil, init = false, target = "Player" }
@@ -327,10 +350,13 @@ local PawnAbilityState = { list = nil, init = false, target = "Main Pawn", isPaw
 local function resetAbilityState(state)
 	state.list = nil
 	state.init = false
+	state.contextAddress = nil
+	state.job = nil
 end
 
 -- Swaps the character's equipped ability array for one with the enabled augments added.
--- When onlyIfStale is set, nothing is done if our array is already in place.
+-- Preserve native slots, even after a vocation change. Pointer identity alone cannot
+-- detect an in-place clear; verify our appended slots before status calculation.
 local function updateEquippedList(state, abilityContext, job, enabledAugments, onlyIfStale)
 	if abilityContext == nil or job == nil then return false end
 	local currentEquipped = abilityContext:call("getEquipAbilityList", job)
@@ -339,8 +365,14 @@ local function updateEquippedList(state, abilityContext, job, enabledAugments, o
 	for i = 0, math.min(getArraySize(currentList), NATIVE_SLOT_COUNT) - 1 do
 		reportUnknownAugment(getAbilityValue(currentList, i), i, job, state.target)
 	end
-	local isOurList = state.init and state.list ~= nil and getAddress(currentList) == getAddress(state.list)
-	if onlyIfStale and isOurList then return true end
+	local currentAddress = getAddress(currentList)
+	local contextAddress = getAddress(abilityContext)
+	local isOurList = state.init and state.list ~= nil and currentAddress ~= nil and currentAddress == getAddress(state.list)
+	local sameContextAndJob = contextAddress ~= nil and state.contextAddress == contextAddress and state.job == job
+	if onlyIfStale and isOurList and sameContextAndJob then
+		if augmentsMatch(currentList, enabledAugments, state.isPawn) then return true end
+		Log(state.target .. ": restoring mod augment slots modified in place.")
+	end
 	if not isOurList then
 		local newList = createAbilityList(currentList)
 		if newList == nil then return false end
@@ -349,6 +381,8 @@ local function updateEquippedList(state, abilityContext, job, enabledAugments, o
 	end
 	applyAugments(state.list, enabledAugments, state.isPawn)
 	if not isOurList then currentEquipped:set_field("Abilities", state.list) end
+	state.contextAddress = contextAddress
+	state.job = job
 	return true
 end
 
@@ -384,7 +418,160 @@ local function save()
 	saveConfig["DescriptiveMode"] = dataDescriptiveMode
 	saveConfig["AugmentsOverhaulEnabled"] = AugmentsOverhaulEnabled
 	saveConfig["AugmentsOverhaulSettings"] = AbilitiesParamMod
-	json.dump_file(configPath, saveConfig)
+	return json.dump_file(configPath, saveConfig)
+end
+
+local function readPresets()
+	for slot = 1, PRESET_COUNT do
+		presets[slot] = { Name = "Slot " .. slot, Player = {}, Pawn = {} }
+	end
+	local ok, err = pcall(function()
+		local loaded = json.load_file(presetsPath)
+		if loaded == nil then return end
+		if type(loaded) ~= "table" then error("Invalid preset file.", 0) end
+		for slot = 1, PRESET_COUNT do
+			local entry = loaded[slot]
+			if entry ~= nil then
+				if type(entry) ~= "table" then error("Invalid preset slot " .. slot .. ".", 0) end
+				local preset = presets[slot]
+				if entry.Name ~= nil then
+					if type(entry.Name) ~= "string" or not entry.Name:match("%S") then
+						error("Invalid name in preset slot " .. slot .. ".", 0)
+					end
+					preset.Name = entry.Name
+				end
+				for _, target in ipairs({ "Player", "Pawn" }) do
+					local augments = entry[target]
+					if augments ~= nil then
+						if type(augments) ~= "table" then error("Invalid augments in preset slot " .. slot .. ".", 0) end
+						for key, enabled in pairs(augments) do
+							local id = tonumber(key)
+							if not id or id <= 0 or id % 1 ~= 0 or type(enabled) ~= "boolean" then
+								error("Invalid augment entry in preset slot " .. slot .. ".", 0)
+							end
+							if enabled then preset[target][tostring(id)] = true end
+						end
+					end
+				end
+			end
+		end
+	end)
+	if not ok then
+		presetsReadError = "Could not read " .. presetsPath .. ": " .. tostring(err)
+		Log(presetsReadError, "error")
+	end
+end
+
+local function getPresetNativeEquipped()
+	local player, playerReady = getNativeEquipped(GetPlayerAbilityContext(), GetPlayerJob(), "Player")
+	local pawn, pawnReady = getNativeEquipped(GetPawnAbilityContext(), GetPawnJob(), "Main Pawn")
+	if not playerReady or not pawnReady then
+		error("Player and main pawn augments must be available. Load into the game with your main pawn first.", 0)
+	end
+	return player, pawn
+end
+
+local function snapshotAugments(enabled, equipped)
+	local snapshot = {}
+	for key, value in pairs(enabled) do
+		if value then snapshot[key] = true end
+	end
+	for id in pairs(equipped) do snapshot[tostring(id)] = true end
+	return snapshot
+end
+
+local function savePreset(slot)
+	local player, pawn = getPresetNativeEquipped()
+	local updated = {}
+	for i = 1, PRESET_COUNT do updated[i] = presets[i] end
+	updated[slot] = {
+		Name = presetName,
+		Player = snapshotAugments(dataAugmentsPlayerEnabled, player),
+		Pawn = snapshotAugments(dataAugmentsPawnEnabled, pawn)
+	}
+	if json.dump_file(presetsPath, updated) == false then error("Could not write " .. presetsPath .. ".", 0) end
+	presets = updated
+end
+
+local function presetSelections(saved, equipped, isPawnTarget)
+	local enabled = {}
+	for id = ABILITY_MIN, ABILITY_MAX do
+		local key = tostring(id)
+		enabled[key] = saved[key] == true and canUseAugment(id, isPawnTarget) and not equipped[id]
+	end
+	return enabled
+end
+
+local function loadPreset(slot)
+	local player, pawn = getPresetNativeEquipped()
+	local previousPlayer, previousPawn = dataAugmentsPlayerEnabled, dataAugmentsPawnEnabled
+	dataAugmentsPlayerEnabled = presetSelections(presets[slot].Player, player, false)
+	dataAugmentsPawnEnabled = presetSelections(presets[slot].Pawn, pawn, true)
+	local ok, err = pcall(function()
+		if not updateEquippedListPlayer() then error("Could not apply player augments.", 0) end
+		if not updateEquippedListPawn() then error("Could not apply main pawn augments.", 0) end
+		if save() == false then error("Could not write " .. configPath .. ".", 0) end
+	end)
+	if not ok then
+		dataAugmentsPlayerEnabled, dataAugmentsPawnEnabled = previousPlayer, previousPawn
+		for _, update in ipairs({ updateEquippedListPlayer, updateEquippedListPawn }) do
+			local restored, result = pcall(update)
+			if not restored or not result then Log("Could not restore augments after a failed preset load: " .. tostring(result), "error") end
+		end
+		error(err, 0)
+	end
+end
+
+local function runPresetAction(action, slot)
+	local ok, err = pcall(function()
+		if presetsReadError then error(presetsReadError, 0) end
+		action(slot)
+	end)
+	if ok then
+		presetMode, presetSlot, presetError = nil, nil, nil
+	else
+		presetError = tostring(err)
+		Log("Preset operation failed: " .. presetError, "error")
+	end
+end
+
+local function drawPresets()
+	if ui.button("Save##AugmentPresets") then
+		presetMode, presetSlot, presetError = "save", nil, nil
+	end
+	ui.same_line()
+	if ui.button("Load##AugmentPresets") then
+		presetMode, presetSlot, presetError = "load", nil, nil
+	end
+	if presetMode then
+		local mode = presetMode
+		for slot = 1, PRESET_COUNT do
+			if slot > 1 then ui.same_line() end
+			if ui.button(presets[slot].Name .. "###AugmentPresetSlot" .. slot) then
+				if mode == "save" then
+					presetSlot, presetName, presetError = slot, presets[slot].Name, nil
+				else
+					runPresetAction(loadPreset, slot)
+				end
+			end
+		end
+		ui.same_line()
+		if ui.button("Cancel##AugmentPresets") then
+			presetMode, presetSlot, presetError = nil, nil, nil
+		end
+		if presetMode == "save" and presetSlot then
+			local changed, value = ui.input_text("Preset name##AugmentPresets", presetName)
+			if changed then presetName = value end
+			if ui.button("Confirm Save##AugmentPresets") then
+				if not presetName:match("%S") then
+					presetError = "Enter a preset name before saving."
+				else
+					runPresetAction(savePreset, presetSlot)
+				end
+			end
+		end
+	end
+	if presetError or presetsReadError then ui.text_colored(presetError or presetsReadError, 0xFF3C3CE6) end
 end
 
 sdk.hook(sdk.find_type_definition("app.GuiManager"):get_method("OnChangeSceneType"),
@@ -451,6 +638,7 @@ re.on_draw_ui(function()
 				-- save()
 			-- end
 			
+			drawPresets()
 			ui.text_colored(ModStrings["AugmentsMenuNote"], 0xFF00D7FF)
 			ui.separator()
 
@@ -670,14 +858,15 @@ function (args)
 end, nil)
 
 
--- Vocation switching handling. Handled after the original runs so CurrentJob is already the new vocation.
-local jobChangedTarget
+-- This notification need not be the final step of a vocation change. The status
+-- hook also checks the observed job/context and repairs any later list changes.
 sdk.hook(sdk.find_type_definition("app.JobContext"):get_method("setJobChanged(app.Character.JobEnum)"),
 function (args)
-	jobChangedTarget = sdk.to_managed_object(args[2])
+	thread.get_hook_storage().augmentsUnleashedJobTarget = sdk.to_managed_object(args[2])
 end, function (retval)
-	local target = jobChangedTarget
-	jobChangedTarget = nil
+	local storage = thread.get_hook_storage()
+	local target = storage.augmentsUnleashedJobTarget
+	storage.augmentsUnleashedJobTarget = nil
 	local targetAddress = getAddress(target)
 	if targetAddress == nil then return retval end
 
@@ -724,6 +913,7 @@ function App.Init()
 	local data = {}
 	local config = {}
 	Log("Augments Unleashed Initialization!")
+	readPresets()
 	-- Loading Data
 	data = json.load_file(dataPath) or {}
 	for key, value in pairs(data) do
