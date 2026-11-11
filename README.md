@@ -164,6 +164,18 @@ The core of this mod simply needed an update to the parameters used and an updat
 - Updated the affected parameters to also support characters in the moored world (`InNRD`)
 - Updated to latest REFramework IMGUI library
 
+### [Higher Drop Rate Or Number](https://www.nexusmods.com/dragonsdogma2/mods/68) by [xyzkljl1](https://www.nexusmods.com/dragonsdogma2/users/133617318)
+> Enemy never drops air now. (Optional) Enemy drops more items than before. 
+
+I fixed this mod but assumed the author would come back to fix it only to learn he depreciated it. The mod itself simply broke after Dark Arisen and frankly I'm not sure if it will affect drop rates of spoils in that region. Aside from spoils though, it does guarantee a drop of something with every kill, I'm just not sure how useful that'll be after a while. Best to pair with a loot everything mod if it gets too overwhelming.
+
+- Now uses `_currentValue` instead of `_current` from `get_Values()`
+- Does a proper readiness check at start
+- Added a debug log function
+- Instead of applying drop rates changes only at boot (or script restart), you can now manually apply your changes at the press of a button
+- Added REFramework option for drop multiplier. Just hit apply.
+- Otherwise it should still always guarantee a drop now
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.
 
