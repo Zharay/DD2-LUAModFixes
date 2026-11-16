@@ -118,6 +118,13 @@ jobs:
           make_zip FallDamageManager \
             reframework/autorun/FallDamageManager.lua
 
+          make_zip RestorationMagicOverhaul \
+            reframework/autorun/RestorationMagicOverhaul.lua
+            reframework/data/RestorationMagicOverhaul.json
+
+          make_zip FakeSpotlightDisabler \
+            reframework/autorun/FakeSpotlightDisabler.lua
+
           # ---- End of entries ----
 
           # ---- Build All-In-One zip ----
