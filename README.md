@@ -176,6 +176,41 @@ I fixed this mod but assumed the author would come back to fix it only to learn 
 - Added REFramework option for drop multiplier. Just hit apply.
 - Otherwise it should still always guarantee a drop now
 
+### [Restoration Magic Overhaul](https://www.nexusmods.com/dragonsdogma2/mods/622) by [k1ng4](https://www.nexusmods.com/dragonsdogma2/users/120273023)
+> Massive overhaul of restoration magic, majorly to do with loss gauge, status removal, and rotten food.
+> - Celestial Paean: Restore up to 5 expired item. Restore up to 15% loss gauge. Cure negative status effects if cured for full duration.
+> - Argent Succor: Cure 7% loss gauge
+> - Anodyne: Cure up to 3% loss gauge
+> - Halidom: Cure petrifaction if cured for full duration.
+> - Decanter: Leech for 20% damage done to enemy as loss gauge regen.
+> - Restoration Arrow: Fully charged version regen 7% loss gauge.
+
+This one required a complete redo and not much remains of the original script at this point. I tested every ability except Decanter as that one requires your pawns to do damage (or your sorcerer pawn to cast it on your party). It should work, but this one already took way too much to implement and improve at this point.
+
+Note 1: Loss recovery doesn't actually heal what was lost. A normal healing spell or item will still be required to do that (or in the case of recovery arrow, a re-cast).
+
+Note 2: There might be a case where using an item to restore loss gauge at the same time as one of these abilities could do some wonky things. Logically, the mod will only recover up to the amount it is expecting your max HP to reach. Using an item will go past that, thus ending its heal early. Before the mod would just override your item usage completely.
+
+- Updated to latest version of DD2 and REFramework
+- Now uses `recoverMaxHp(System.Single)` to do loss-gauge recovery. Before it was writing to Max HP values directly which is a big no-no.
+- Instead of using `DamageOwnerHitController` or `DamageHitController` we use `Character:get_Hit()`
+- Moved `Cleansable` table out of the JSON and into the script. JSON is now for storing saved options
+- We now dynamically calculate loss recovery when under the effects of healing abilities given the time they last for (for Celestial Paean is 15 seconds and Anodyne is 10)
+- Added an option to toggle the mod
+- We now have options that control the max amount of loss-gauge recovered and items restored
+
+### [Fake Spotlight - Rimlight Disabler](https://www.nexusmods.com/dragonsdogma2/mods/1205) by [TheMajesticNoob](https://www.nexusmods.com/dragonsdogma2/users/78640003)
+> A simple mod that disables character's and lantern's fake spotlight/rimlight.
+
+This one was nearly a complete rewrite using what I saw Resident Evil games do as a basis. And yes, I renamed them as "rim lights" in the options despite them actually being spotlights for real. I kept calling them rim lights as I did this so w/e.
+
+- Updated to latest version of DD2 and REFramework
+- Now avoids unsafe light hooks
+- We now wait until characters are loaded and their lights available before we do anything
+- We no longer move the lantern on the characters. This was resulting in invisible character models after pawns/player teleporting.
+- Renamed option names in settings UI
+- Added tool-tips for each option to better explain what they do
+
 ## Working but Optimized Mods
 These are mods that are working but have issues that irked me to hell. They will NOT be listed on Nexus mods as they fall outside the scope of fair use.
 
